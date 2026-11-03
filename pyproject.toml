@@ -1,0 +1,36 @@
+[project]
+name = "personal-knowledge-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "langchain>=1.4.5",
+    "langchain-openai>=1.7.1",
+    "langchain-tavily>=0.2.18",
+    "langgraph>=1.2.15",
+    "python-dotenv>=1.2.4",
+]
+
+[project.scripts]
+personal-knowledge-agent = "app.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.12.23,<0.13.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "app"
+module-root = "."
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+    "live: 需要真实模型 API 的冒烟测试",
+]
