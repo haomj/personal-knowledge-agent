@@ -20,3 +20,6 @@ wheels/
 
 # Local learning examples (kept locally, not published)
 examples/
+
+# Generated vector index
+data/chroma/

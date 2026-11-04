@@ -11,7 +11,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from pydantic import SecretStr
 
 # 项目根目录下的 .env 在导入配置时加载一次。
 load_dotenv()
@@ -35,6 +36,14 @@ class Settings:
     thinking: str
     system_prompt: str
     log_level: str
+    embedding_model: str
+    embedding_base_url: str
+    embedding_api_key: str
+    docs_dir: str
+    chroma_dir: str
+    chroma_collection: str
+    rag_top_k: int
+    rag_max_retries: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -47,6 +56,22 @@ class Settings:
             thinking=os.getenv("LLM_THINKING", "disabled").lower(),
             system_prompt=os.getenv("SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
+            embedding_model=os.getenv("EMBEDDING_MODEL", "text-embedding-v4"),
+            embedding_base_url=os.getenv(
+                "EMBEDDING_BASE_URL",
+                os.getenv(
+                    "DASHSCOPE_BASE_URL",
+                    "https://dashscope.aliyuncs.com/compatible-mode/v1",
+                ),
+            ),
+            embedding_api_key=os.getenv(
+                "EMBEDDING_API_KEY", os.getenv("DASHSCOPE_API_KEY", "")
+            ),
+            docs_dir=os.getenv("DOCS_DIR", "data/docs"),
+            chroma_dir=os.getenv("CHROMA_DIR", "data/chroma"),
+            chroma_collection=os.getenv("CHROMA_COLLECTION", "knowledge_base"),
+            rag_top_k=int(os.getenv("RAG_TOP_K", "4")),
+            rag_max_retries=int(os.getenv("RAG_MAX_RETRIES", "1")),
         )
 
 
@@ -80,11 +105,35 @@ def get_model(
     return ChatOpenAI(
         model=settings.model_name,
         base_url=settings.base_url,
-        api_key=settings.api_key,
+        # LangChain 的参数类型是 SecretStr；同时避免密钥出现在对象 repr 中。
+        api_key=SecretStr(settings.api_key),
         temperature=settings.temperature,
         streaming=streaming,
         stream_usage=True,
         extra_body=extra_body,
+    )
+
+
+def get_embeddings(settings: Settings | None = None) -> OpenAIEmbeddings:
+    """创建 Embedding 客户端。
+
+    Day 2 使用 DashScope 的 OpenAI 兼容 Embedding 接口。
+    DeepSeek 本身没有 Embedding API，所以向量化走 DashScope。
+    """
+    settings = settings or get_settings()
+    if not settings.embedding_api_key:
+        raise RuntimeError(
+            "缺少 DASHSCOPE_API_KEY（或 EMBEDDING_API_KEY）。"
+            "请在项目根目录的 .env 中配置后重试。"
+        )
+    return OpenAIEmbeddings(
+        model=settings.embedding_model,
+        base_url=settings.embedding_base_url,
+        # 与 ChatOpenAI 一样，类型检查期望 SecretStr。
+        api_key=SecretStr(settings.embedding_api_key),
+        check_embedding_ctx_length=False,
+        # DashScope 兼容接口单次最多接受 10 条文本，超过会报 batch size invalid。
+        chunk_size=10,
     )
 
 

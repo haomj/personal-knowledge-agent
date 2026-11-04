@@ -29,3 +29,18 @@ def clean_content(content: Any) -> Any:
     if isinstance(content, dict):
         return {key: clean_content(value) for key, value in content.items()}
     return content
+
+
+def content_text(content: Any) -> str:
+    """把消息内容统一成可打印文本（兼容 str 和 content blocks）。"""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+        return "".join(parts)
+    return str(content)

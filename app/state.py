@@ -1,16 +1,21 @@
 """Graph 的共享状态定义。"""
 
+from typing import Any
+
+from langchain_core.documents import Document
 from langgraph.graph import MessagesState
 
 
 class AgentState(MessagesState):
-    """Day 1 的 Agent 状态：只有一条消息历史。
+    """Agent 的共享状态。
 
-    MessagesState 已经定义为：
-
-        class MessagesState(TypedDict):
-            messages: Annotated[list[AnyMessage], add_messages]
-
-    add_messages 是 reducer：节点返回 {"messages": [新消息]} 时，
-    LangGraph 会把它追加到已有列表，而不是覆盖整个列表。
+    Day 1 只使用 messages；
+    Day 2 增加 RAG 检索过程需要的字段。
     """
+
+    query: str
+    documents: list[Document]
+    sources: list[dict[str, Any]]
+    retrieval_attempts: int
+    retrieval_sufficient: bool
+    grade_reason: str
