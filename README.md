@@ -1,6 +1,6 @@
 # Personal Knowledge Research Agent
 
-按 10 天计划逐步实现一个可部署的个人知识研究助手。当前进度：**Day 3 — v0.3-memory**。
+按 10 天计划逐步实现一个可部署的个人知识研究助手。当前进度：**Day 4 — v0.4-mcp**。
 
 ## 当前能力
 
@@ -28,13 +28,23 @@
 - **用户隔离**：不同 `user_id` 使用不同 namespace，互不可见
 - CLI 命令：`/remember key=value`、`/preferences`、`/new`
 
-```text
-短期记忆：
-Thread -> Conversation -> Checkpoint -> SQLite
+### Day 4：MCP
 
-长期记忆：
-User -> /remember -> Store(namespace=users/<user_id>/preferences)
-     -> 下一轮生成时注入 system prompt
+- 独立 MCP Server（stdio transport）
+- 两个工具：`list_documents()`、`search_documents(query, k=4)`
+- 复用 Day 2 的 Chroma Retriever，不重写检索逻辑
+- MCP Client：工具发现（Tool Discovery）、直接调用工具
+- `langchain-mcp-adapters`：把 MCP 工具转换成 LangChain Tool
+- Agent 使用 `create_agent` 自主选择并调用 MCP 工具
+- MCP 模式使用 `AsyncSqliteSaver`，保留跨进程会话历史
+
+```text
+Agent
+  -> MCP Client
+  -> MCP Session
+  -> MCP Server (stdio)
+  -> search_documents / list_documents
+  -> Day 2 Chroma Retriever
 ```
 
 ## 环境准备
@@ -93,22 +103,40 @@ uv run personal-knowledge-ingest
 uv run python -m app.cli
 ```
 
-指定用户和会话：
+MCP 模式：
 
 ```bash
-uv run python -m app.cli --user adrian --thread day3-chat
+uv run python -m app.cli --mode mcp --user adrian --thread day4-mcp
 ```
 
-单轮提问：
+单轮 MCP 提问：
 
 ```bash
-uv run python -m app.cli --question "Agentic RAG 最多重试几次？" --user adrian
+uv run python -m app.cli --mode mcp \
+  --question "MCP 的 stdio 适合什么场景？" \
+  --no-stream
 ```
 
-回到基础对话模式：
+基础对话模式：
 
 ```bash
 uv run python -m app.cli --mode basic --user adrian
+```
+
+### MCP 原始 Client 演示
+
+不经过 Agent，直接看工具发现和工具调用：
+
+```bash
+uv run python -m app.mcp.client
+```
+
+### 查看 MCP Server 日志
+
+默认只输出 WARNING，避免干扰 stdio JSON-RPC。需要排查时：
+
+```bash
+MCP_LOG_LEVEL=INFO uv run python -m app.cli --mode mcp --question "MCP 有哪些传输方式？"
 ```
 
 ## 记忆命令
@@ -144,6 +172,8 @@ printf '我叫什么名字？只回答名字。\n/exit\n' | \
 
 第二个进程会从 SQLite checkpoint 恢复第一轮历史，回答 `Adrian`。
 
+MCP 模式同样支持跨进程恢复，内部使用 `AsyncSqliteSaver`。
+
 ## 验证长期记忆隔离
 
 给 adrian 保存一个无法从问题本身猜到的偏好：
@@ -171,13 +201,19 @@ printf '我的项目代号是什么？\n/exit\n' | \
 
 ## 测试
 
-离线测试（不访问网络）：
+离线测试（不访问模型/Embedding API）：
 
 ```bash
 uv run pytest
 ```
 
-真实 Embedding + DeepSeek 的 RAG 端到端测试：
+MCP 真实端到端测试：
+
+```bash
+RUN_LIVE_TESTS=1 uv run pytest tests/test_mcp_live.py -q
+```
+
+RAG 真实端到端测试：
 
 ```bash
 RUN_LIVE_TESTS=1 uv run pytest tests/test_rag_live.py -q
@@ -197,7 +233,7 @@ app/
 ├── state.py             # AgentState（messages + RAG + user_id）
 ├── graph.py             # 基础图，支持 Store 偏好注入
 ├── entrypoint.py        # LangGraph Server 加载入口
-├── cli.py               # 命令行：RAG / 基础对话 / 记忆命令
+├── cli.py               # rag / basic / mcp 三种模式
 ├── text.py              # 文本清洗
 ├── rag/
 │   ├── loader.py        # Markdown/TXT 加载
@@ -209,8 +245,12 @@ app/
 │   ├── rewriter.py      # Query Rewriting
 │   ├── graph.py         # Agentic RAG 图
 │   └── ingest.py        # 索引构建脚本
+├── mcp/
+│   ├── server.py        # stdio MCP Server
+│   ├── client.py        # 原始 MCP Client + LangChain 工具加载
+│   └── agent.py         # MCP 工具调用 Agent
 └── memory/
-    ├── checkpointer.py  # SQLite 短期记忆
+    ├── checkpointer.py  # SQLite 同步/异步短期记忆
     └── store.py         # SQLite 长期记忆（用户偏好）
 
 data/
@@ -225,13 +265,16 @@ tests/
 ├── test_rag_pipeline.py # 加载/切分/Chroma
 ├── test_rag_graph.py    # RAG 路由
 ├── test_memory.py       # SQLite 重启恢复/偏好共享/用户隔离
+├── test_mcp.py          # MCP 工具发现/list_documents
 ├── test_smoke_live.py   # Day 1 真实模型
-└── test_rag_live.py     # Day 2 真实 RAG
+├── test_rag_live.py     # Day 2 真实 RAG
+└── test_mcp_live.py     # Day 4 真实 MCP
 
 docs/
 ├── day01-langgraph.md
 ├── day02-agentic-rag.md
-└── day03-memory.md
+├── day03-memory.md
+└── day04-mcp.md
 ```
 
 ## 开发进度
@@ -239,7 +282,7 @@ docs/
 - [x] Day 1：LangGraph 骨架 + 基础 Agent
 - [x] Day 2：Agentic RAG
 - [x] Day 3：Memory 与持久化
-- [ ] Day 4：MCP
+- [x] Day 4：MCP
 - [ ] Day 5：MultiAgent
 - [ ] Day 6：HITL
 - [ ] Day 7：Middleware
