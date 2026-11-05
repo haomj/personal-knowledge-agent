@@ -1,6 +1,6 @@
 # Personal Knowledge Research Agent
 
-按 10 天计划逐步实现一个可部署的个人知识研究助手。当前进度：**Day 2 — v0.2-agentic-rag**。
+按 10 天计划逐步实现一个可部署的个人知识研究助手。当前进度：**Day 3 — v0.3-memory**。
 
 ## 当前能力
 
@@ -18,15 +18,23 @@
 - 检索结果相关性评分（LLM + function calling）
 - 检索不足时改写查询并重试一次
 - 回答带 `[来源: 文件路径]` 引用，CLI 单独展示检索来源
-- 保留 Day 1 的基础对话模式
+
+### Day 3：Memory 与持久化
+
+- **短期记忆**：SQLite checkpointer，按 `thread_id` 保存会话状态
+- **重启恢复**：进程退出后，用同一个 `thread_id` 继续对话
+- **长期记忆**：LangGraph `SqliteStore` 保存用户偏好
+- **跨 thread 共享**：同一个 `user_id` 的不同 thread 共享偏好
+- **用户隔离**：不同 `user_id` 使用不同 namespace，互不可见
+- CLI 命令：`/remember key=value`、`/preferences`、`/new`
 
 ```text
-用户问题
-  -> retrieve（Chroma）
-  -> grade（资料是否足够）
-     -> 足够：generate（带来源回答）
-     -> 不足：rewrite -> retrieve（最多一次）
-              -> generate（资料不足时明确说明）
+短期记忆：
+Thread -> Conversation -> Checkpoint -> SQLite
+
+长期记忆：
+User -> /remember -> Store(namespace=users/<user_id>/preferences)
+     -> 下一轮生成时注入 system prompt
 ```
 
 ## 环境准备
@@ -55,9 +63,13 @@ CHROMA_DIR=data/chroma
 CHROMA_COLLECTION=knowledge_base
 RAG_TOP_K=4
 RAG_MAX_RETRIES=1
+
+CHECKPOINT_DB=data/checkpoints.sqlite
+MEMORY_DB=data/memory.sqlite
+DEFAULT_USER=local-user
 ```
 
-> `.env` 已被 `.gitignore` 忽略，不要提交真实 Key。`data/chroma/` 是生成的索引，也不要提交。
+> `.env`、`data/chroma/`、`data/*.sqlite*` 都已被 `.gitignore` 忽略，不要提交真实 Key 或本地会话数据。
 
 ## 构建知识库索引
 
@@ -65,47 +77,97 @@ RAG_MAX_RETRIES=1
 uv run python -m app.rag.ingest
 ```
 
-或者使用安装后的命令：
+或者：
 
 ```bash
 uv run personal-knowledge-ingest
 ```
 
-默认会加载 `data/docs/` 下的 Markdown/TXT，切分后重建 `data/chroma/`。
-加 `--append` 可以不清空旧索引直接追加。
+默认加载 `data/docs/`，切分后重建 `data/chroma/`。加 `--append` 可以不清空旧索引直接追加。
 
 ## 运行
 
-默认使用 Agentic RAG：
+默认使用 Agentic RAG + Memory：
 
 ```bash
 uv run python -m app.cli
 ```
 
+指定用户和会话：
+
+```bash
+uv run python -m app.cli --user adrian --thread day3-chat
+```
+
 单轮提问：
 
 ```bash
-uv run python -m app.cli --question "Agentic RAG 最多重试几次？"
+uv run python -m app.cli --question "Agentic RAG 最多重试几次？" --user adrian
 ```
 
-回到 Day 1 的基础对话：
+回到基础对话模式：
 
 ```bash
-uv run python -m app.cli --mode basic
+uv run python -m app.cli --mode basic --user adrian
 ```
 
-同一会话内多轮：
+## 记忆命令
+
+在交互式 CLI 中：
+
+```text
+/remember project_code=ZK-2026
+/preferences
+/new
+/exit
+```
+
+- `/remember key=value`：把偏好写入当前用户的 Store namespace。
+- `/preferences`：查看当前用户的全部长期偏好。
+- `/new`：新建一个 thread；长期偏好仍然共享。
+
+## 验证重启恢复
+
+第一个进程：
 
 ```bash
-printf 'MCP 有哪些传输方式？\n其中 stdio 适合什么场景？\n/exit\n' | \
-  uv run python -m app.cli --thread day2-multi
+printf '我叫 Adrian，请记住。\n/exit\n' | \
+  uv run python -m app.cli --mode basic --thread day3-persist --user adrian
 ```
 
-关闭流式输出：
+第二个进程，使用同一个 `--thread`：
 
 ```bash
-uv run python -m app.cli --question "Chroma 推荐什么距离度量？" --no-stream
+printf '我叫什么名字？只回答名字。\n/exit\n' | \
+  uv run python -m app.cli --mode basic --thread day3-persist --user adrian
 ```
+
+第二个进程会从 SQLite checkpoint 恢复第一轮历史，回答 `Adrian`。
+
+## 验证长期记忆隔离
+
+给 adrian 保存一个无法从问题本身猜到的偏好：
+
+```bash
+printf '/remember project_code=ZK-2026\n/exit\n' | \
+  uv run python -m app.cli --mode basic --thread day3-code-a --user adrian
+```
+
+同一用户、不同 thread：
+
+```bash
+printf '我的项目代号是什么？\n/exit\n' | \
+  uv run python -m app.cli --mode basic --thread day3-code-b --user adrian
+```
+
+不同用户：
+
+```bash
+printf '我的项目代号是什么？\n/exit\n' | \
+  uv run python -m app.cli --mode basic --thread day3-code-c --user bob
+```
+
+预期：adrian 回答 `ZK-2026`；bob 表示无法确定。
 
 ## 测试
 
@@ -132,44 +194,51 @@ RUN_LIVE_TESTS=1 uv run pytest tests/test_smoke_live.py -q
 ```text
 app/
 ├── config.py            # 环境变量、模型/Embedding 工厂、日志
-├── state.py             # AgentState（messages + RAG 字段）
-├── graph.py             # Day 1 基础图
+├── state.py             # AgentState（messages + RAG + user_id）
+├── graph.py             # 基础图，支持 Store 偏好注入
 ├── entrypoint.py        # LangGraph Server 加载入口
-├── cli.py               # 命令行：RAG / 基础对话
+├── cli.py               # 命令行：RAG / 基础对话 / 记忆命令
 ├── text.py              # 文本清洗
-└── rag/
-    ├── loader.py        # Markdown/TXT 加载
-    ├── splitter.py      # 递归切分
-    ├── embeddings.py    # Embedding 工厂
-    ├── vector_store.py  # Chroma 创建/重建
-    ├── retriever.py     # 相似度检索
-    ├── evaluator.py     # Retrieval Grading
-    ├── rewriter.py      # Query Rewriting
-    ├── graph.py         # Agentic RAG 图
-    └── ingest.py        # 索引构建脚本
+├── rag/
+│   ├── loader.py        # Markdown/TXT 加载
+│   ├── splitter.py      # 递归切分
+│   ├── embeddings.py    # Embedding 工厂
+│   ├── vector_store.py  # Chroma 创建/重建
+│   ├── retriever.py     # 相似度检索
+│   ├── evaluator.py     # Retrieval Grading
+│   ├── rewriter.py      # Query Rewriting
+│   ├── graph.py         # Agentic RAG 图
+│   └── ingest.py        # 索引构建脚本
+└── memory/
+    ├── checkpointer.py  # SQLite 短期记忆
+    └── store.py         # SQLite 长期记忆（用户偏好）
 
 data/
 ├── docs/                # 10 篇本地技术文档（会提交）
-└── chroma/              # 生成的向量索引（不提交）
+├── chroma/              # 生成的向量索引（不提交）
+├── checkpoints.sqlite   # 会话 checkpoint（不提交）
+└── memory.sqlite        # 用户长期偏好（不提交）
 
 tests/
 ├── test_graph.py        # Day 1 基础图
 ├── test_text.py         # 输入清洗
 ├── test_rag_pipeline.py # 加载/切分/Chroma
 ├── test_rag_graph.py    # RAG 路由
+├── test_memory.py       # SQLite 重启恢复/偏好共享/用户隔离
 ├── test_smoke_live.py   # Day 1 真实模型
 └── test_rag_live.py     # Day 2 真实 RAG
 
 docs/
 ├── day01-langgraph.md
-└── day02-agentic-rag.md
+├── day02-agentic-rag.md
+└── day03-memory.md
 ```
 
 ## 开发进度
 
 - [x] Day 1：LangGraph 骨架 + 基础 Agent
 - [x] Day 2：Agentic RAG
-- [ ] Day 3：Memory 与持久化
+- [x] Day 3：Memory 与持久化
 - [ ] Day 4：MCP
 - [ ] Day 5：MultiAgent
 - [ ] Day 6：HITL

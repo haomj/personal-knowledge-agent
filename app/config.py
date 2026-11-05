@@ -44,6 +44,9 @@ class Settings:
     chroma_collection: str
     rag_top_k: int
     rag_max_retries: int
+    checkpoint_db: str
+    memory_db: str
+    default_user: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -72,6 +75,11 @@ class Settings:
             chroma_collection=os.getenv("CHROMA_COLLECTION", "knowledge_base"),
             rag_top_k=int(os.getenv("RAG_TOP_K", "4")),
             rag_max_retries=int(os.getenv("RAG_MAX_RETRIES", "1")),
+            checkpoint_db=os.getenv(
+                "CHECKPOINT_DB", "data/checkpoints.sqlite"
+            ),
+            memory_db=os.getenv("MEMORY_DB", "data/memory.sqlite"),
+            default_user=os.getenv("DEFAULT_USER", "local-user"),
         )
 
 

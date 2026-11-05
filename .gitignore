@@ -23,3 +23,7 @@ examples/
 
 # Generated vector index
 data/chroma/
+
+# Local SQLite databases (checkpoints, long-term memory)
+data/*.sqlite*
+data/*.db

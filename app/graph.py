@@ -18,8 +18,10 @@ from langchain_core.messages import AIMessage, SystemMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.store.base import BaseStore
 
 from app.config import get_model, get_settings
+from app.memory.store import preference_prompt
 from app.state import AgentState
 from app.text import clean_content, clean_text
 
@@ -46,13 +48,15 @@ def build_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     *,
     system_prompt: str | None = None,
+    store: BaseStore | None = None,
 ) -> Any:
-    """构建并编译 Day 1 的 Agent 图。
+    """构建并编译基础 Agent 图。
 
     Args:
         model: 便于测试注入的模型；默认从环境变量创建 deepseek-flash。
-        checkpointer: 开启后可用 thread_id 保存/恢复会话（Day 3 会换成 SQLite）。
+        checkpointer: 开启后可用 thread_id 保存/恢复会话。
         system_prompt: 系统提示词；默认读取配置。
+        store: 长期记忆 Store；有值时把当前用户偏好注入 system prompt。
     """
     model = model or get_model()
     prompt = clean_text(system_prompt or get_settings().system_prompt)
@@ -60,11 +64,22 @@ def build_graph(
     def agent_node(state: AgentState) -> dict[str, list[AIMessage]]:
         # 节点只返回“增量” {"messages": [...]}，由 add_messages reducer 合并。
         messages = state["messages"]
+        user_id = state.get("user_id", "default")
+        preference_block = preference_prompt(store, user_id)
+
         # 系统提示词不写入 State，避免每轮都把它累积进历史；调用时临时拼在消息列表前面。
-        request = [SystemMessage(content=prompt), *_clean_messages(messages)]
+        system_content = prompt
+        if preference_block:
+            system_content = f"{prompt}\n\n{preference_block}"
+        request = [SystemMessage(content=system_content), *_clean_messages(messages)]
 
         started = time.perf_counter()
-        logger.info("agent.start messages=%d", len(messages))
+        logger.info(
+            "agent.start messages=%d user_id=%s memory=%s",
+            len(messages),
+            user_id,
+            bool(preference_block),
+        )
         response = model.invoke(request)
         elapsed = time.perf_counter() - started
 
@@ -84,13 +99,19 @@ def build_graph(
 
     compiled = builder.compile(checkpointer=checkpointer)
     logger.info(
-        "graph.compiled model=%s checkpointer=%s",
+        "graph.compiled model=%s checkpointer=%s store=%s",
         getattr(model, "model_name", type(model).__name__),
         type(checkpointer).__name__ if checkpointer else "none",
+        type(store).__name__ if store else "none",
     )
     return compiled
 
 
-def build_chat_graph() -> Any:
-    """CLI 使用的图：带内存 checkpointer，同一 thread 内保留多轮历史。"""
-    return build_graph(checkpointer=InMemorySaver())
+def build_chat_graph(
+    checkpointer: BaseCheckpointSaver | None = None,
+    store: BaseStore | None = None,
+) -> Any:
+    """CLI 使用的图：默认带内存 checkpointer；Day 3 可传入 SQLite。"""
+    if checkpointer is None:
+        checkpointer = InMemorySaver()
+    return build_graph(checkpointer=checkpointer, store=store)

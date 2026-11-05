@@ -19,3 +19,4 @@ class AgentState(MessagesState):
     retrieval_attempts: int
     retrieval_sufficient: bool
     grade_reason: str
+    user_id: str
