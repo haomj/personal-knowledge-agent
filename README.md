@@ -1,6 +1,6 @@
 # Personal Knowledge Research Agent
 
-按 10 天计划逐步实现一个可部署的个人知识研究助手。当前进度：**Day 4 — v0.4-mcp**。
+按 10 天计划逐步实现一个可部署的个人知识研究助手。当前进度：**Day 5 — v0.5-multiagent**。
 
 ## 当前能力
 
@@ -17,7 +17,7 @@
 - Chroma 本地向量库，cosine 距离
 - 检索结果相关性评分（LLM + function calling）
 - 检索不足时改写查询并重试一次
-- 回答带 `[来源: 文件路径]` 引用，CLI 单独展示检索来源
+- 回答带 `[来源: 文件路径]` 引用
 
 ### Day 3：Memory 与持久化
 
@@ -25,26 +25,34 @@
 - **重启恢复**：进程退出后，用同一个 `thread_id` 继续对话
 - **长期记忆**：LangGraph `SqliteStore` 保存用户偏好
 - **跨 thread 共享**：同一个 `user_id` 的不同 thread 共享偏好
-- **用户隔离**：不同 `user_id` 使用不同 namespace，互不可见
-- CLI 命令：`/remember key=value`、`/preferences`、`/new`
+- **用户隔离**：不同 `user_id` 使用不同 namespace
 
 ### Day 4：MCP
 
 - 独立 MCP Server（stdio transport）
 - 两个工具：`list_documents()`、`search_documents(query, k=4)`
-- 复用 Day 2 的 Chroma Retriever，不重写检索逻辑
-- MCP Client：工具发现（Tool Discovery）、直接调用工具
+- 复用 Day 2 的 Chroma Retriever
+- MCP Client：工具发现、直接调用工具
 - `langchain-mcp-adapters`：把 MCP 工具转换成 LangChain Tool
 - Agent 使用 `create_agent` 自主选择并调用 MCP 工具
-- MCP 模式使用 `AsyncSqliteSaver`，保留跨进程会话历史
+
+### Day 5：MultiAgent
+
+- **Supervisor**：判断任务类型、委派子任务、汇总结果
+- **Knowledge Agent**：通过 MCP 检索本地知识库并总结
+- **Research Agent**：通过 Tavily 联网搜索并总结
+- **Tool-based Handoff**：Supervisor 用 `ask_knowledge_agent` / `ask_research_agent` 两个工具委派
+- **Context Isolation**：子 Agent 只拿子问题，不共享 Supervisor 完整对话
+- **Result Aggregation**：Supervisor 汇总本地来源和网页 URL
+- **任务预算**：每次问题最多 3 次子任务、单个 Agent 最多 2 次
 
 ```text
-Agent
-  -> MCP Client
-  -> MCP Session
-  -> MCP Server (stdio)
-  -> search_documents / list_documents
-  -> Day 2 Chroma Retriever
+用户问题
+  -> Supervisor
+     ├─ ask_knowledge_agent -> MCP -> Chroma
+     └─ ask_research_agent  -> Tavily
+  -> Supervisor 汇总
+  -> 最终答案（本地来源 + 网页 URL）
 ```
 
 ## 环境准备
@@ -67,6 +75,8 @@ LLM_THINKING=disabled
 DASHSCOPE_API_KEY=your-dashscope-api-key
 DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 EMBEDDING_MODEL=text-embedding-v4
+
+TAVILY_API_KEY=your-tavily-api-key
 
 DOCS_DIR=data/docs
 CHROMA_DIR=data/chroma
@@ -93,7 +103,7 @@ uv run python -m app.rag.ingest
 uv run personal-knowledge-ingest
 ```
 
-默认加载 `data/docs/`，切分后重建 `data/chroma/`。加 `--append` 可以不清空旧索引直接追加。
+默认加载 `data/docs/`，切分后重建 `data/chroma/`。
 
 ## 运行
 
@@ -103,18 +113,24 @@ uv run personal-knowledge-ingest
 uv run python -m app.cli
 ```
 
+MultiAgent 模式：
+
+```bash
+uv run python -m app.cli --mode multi --user adrian --thread day5-multi
+```
+
+单轮 MultiAgent 提问：
+
+```bash
+uv run python -m app.cli --mode multi \
+  --question "结合本地知识库中 Agentic RAG 的重试策略，以及 2026 年 LangGraph 的最新版本信息，给我一个简短总结。" \
+  --no-stream
+```
+
 MCP 模式：
 
 ```bash
 uv run python -m app.cli --mode mcp --user adrian --thread day4-mcp
-```
-
-单轮 MCP 提问：
-
-```bash
-uv run python -m app.cli --mode mcp \
-  --question "MCP 的 stdio 适合什么场景？" \
-  --no-stream
 ```
 
 基础对话模式：
@@ -124,8 +140,6 @@ uv run python -m app.cli --mode basic --user adrian
 ```
 
 ### MCP 原始 Client 演示
-
-不经过 Agent，直接看工具发现和工具调用：
 
 ```bash
 uv run python -m app.mcp.client
@@ -156,14 +170,10 @@ MCP_LOG_LEVEL=INFO uv run python -m app.cli --mode mcp --question "MCP 有哪些
 
 ## 验证重启恢复
 
-第一个进程：
-
 ```bash
 printf '我叫 Adrian，请记住。\n/exit\n' | \
   uv run python -m app.cli --mode basic --thread day3-persist --user adrian
 ```
-
-第二个进程，使用同一个 `--thread`：
 
 ```bash
 printf '我叫什么名字？只回答名字。\n/exit\n' | \
@@ -172,39 +182,20 @@ printf '我叫什么名字？只回答名字。\n/exit\n' | \
 
 第二个进程会从 SQLite checkpoint 恢复第一轮历史，回答 `Adrian`。
 
-MCP 模式同样支持跨进程恢复，内部使用 `AsyncSqliteSaver`。
-
-## 验证长期记忆隔离
-
-给 adrian 保存一个无法从问题本身猜到的偏好：
-
-```bash
-printf '/remember project_code=ZK-2026\n/exit\n' | \
-  uv run python -m app.cli --mode basic --thread day3-code-a --user adrian
-```
-
-同一用户、不同 thread：
-
-```bash
-printf '我的项目代号是什么？\n/exit\n' | \
-  uv run python -m app.cli --mode basic --thread day3-code-b --user adrian
-```
-
-不同用户：
-
-```bash
-printf '我的项目代号是什么？\n/exit\n' | \
-  uv run python -m app.cli --mode basic --thread day3-code-c --user bob
-```
-
-预期：adrian 回答 `ZK-2026`；bob 表示无法确定。
+MCP/MultiAgent 模式同样支持跨进程恢复，内部使用 `AsyncSqliteSaver`。
 
 ## 测试
 
-离线测试（不访问模型/Embedding API）：
+离线测试（不访问模型/Embedding/Tavily API）：
 
 ```bash
 uv run pytest
+```
+
+MultiAgent 真实端到端测试：
+
+```bash
+RUN_LIVE_TESTS=1 uv run pytest tests/test_multiagent_live.py -q
 ```
 
 MCP 真实端到端测试：
@@ -219,12 +210,6 @@ RAG 真实端到端测试：
 RUN_LIVE_TESTS=1 uv run pytest tests/test_rag_live.py -q
 ```
 
-Day 1 的真实模型冒烟测试：
-
-```bash
-RUN_LIVE_TESTS=1 uv run pytest tests/test_smoke_live.py -q
-```
-
 ## 目录
 
 ```text
@@ -233,7 +218,7 @@ app/
 ├── state.py             # AgentState（messages + RAG + user_id）
 ├── graph.py             # 基础图，支持 Store 偏好注入
 ├── entrypoint.py        # LangGraph Server 加载入口
-├── cli.py               # rag / basic / mcp 三种模式
+├── cli.py               # rag / basic / mcp / multi 四种模式
 ├── text.py              # 文本清洗
 ├── rag/
 │   ├── loader.py        # Markdown/TXT 加载
@@ -249,6 +234,11 @@ app/
 │   ├── server.py        # stdio MCP Server
 │   ├── client.py        # 原始 MCP Client + LangChain 工具加载
 │   └── agent.py         # MCP 工具调用 Agent
+├── multiagent/
+│   ├── knowledge.py     # Knowledge Agent（MCP 本地知识库）
+│   ├── research.py      # Research Agent（Tavily）
+│   ├── supervisor.py    # Supervisor + 任务预算 + 汇总
+│   └── models.py        # SubagentResult
 └── memory/
     ├── checkpointer.py  # SQLite 同步/异步短期记忆
     └── store.py         # SQLite 长期记忆（用户偏好）
@@ -266,15 +256,18 @@ tests/
 ├── test_rag_graph.py    # RAG 路由
 ├── test_memory.py       # SQLite 重启恢复/偏好共享/用户隔离
 ├── test_mcp.py          # MCP 工具发现/list_documents
+├── test_multiagent.py   # 任务预算/子 Agent
 ├── test_smoke_live.py   # Day 1 真实模型
 ├── test_rag_live.py     # Day 2 真实 RAG
-└── test_mcp_live.py     # Day 4 真实 MCP
+├── test_mcp_live.py     # Day 4 真实 MCP
+└── test_multiagent_live.py # Day 5 真实 MultiAgent
 
 docs/
 ├── day01-langgraph.md
 ├── day02-agentic-rag.md
 ├── day03-memory.md
-└── day04-mcp.md
+├── day04-mcp.md
+└── day05-multiagent.md
 ```
 
 ## 开发进度
@@ -283,7 +276,7 @@ docs/
 - [x] Day 2：Agentic RAG
 - [x] Day 3：Memory 与持久化
 - [x] Day 4：MCP
-- [ ] Day 5：MultiAgent
+- [x] Day 5：MultiAgent
 - [ ] Day 6：HITL
 - [ ] Day 7：Middleware
 - [ ] Day 8：Runtime API 与 Web UI

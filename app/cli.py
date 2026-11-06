@@ -1,11 +1,12 @@
 """Personal Knowledge Agent 命令行入口。
 
-支持三种模式：
+支持四种模式：
 - rag：Agentic RAG + Memory（默认）
 - basic：基础对话 + Memory
 - mcp：通过 MCP Client 调用本地知识库工具
+- multi：Supervisor + Knowledge/Research 子 Agent
 
-Day 4 默认使用 SQLite 短期记忆和 Store 长期记忆：
+Day 5 默认使用 SQLite 短期记忆和 Store 长期记忆：
 - 同一个 ``--thread`` 重启后可以恢复历史；
 - 同一个 ``--user`` 的不同 thread 共享偏好；
 - ``/remember key=value`` 显式写入偏好，``/preferences`` 查看。
@@ -15,7 +16,8 @@ Day 4 默认使用 SQLite 短期记忆和 Store 长期记忆：
     uv run python -m app.cli
     uv run python -m app.cli --mode basic
     uv run python -m app.cli --mode mcp --question "MCP 的 stdio 适合什么场景？"
-    uv run python -m app.cli --thread day4-chat --user adrian
+    uv run python -m app.cli --mode multi --question "结合本地文档和最新资料总结"
+    uv run python -m app.cli --thread day5-chat --user adrian
 """
 
 from __future__ import annotations
@@ -272,7 +274,7 @@ def chat_loop(
 def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     parser = argparse.ArgumentParser(
-        description="Personal Knowledge Agent - Day 4 CLI"
+        description="Personal Knowledge Agent - Day 5 CLI"
     )
     parser.add_argument("-q", "--question", help="只问一个问题然后退出")
     parser.add_argument(
@@ -283,9 +285,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=["rag", "basic", "mcp"],
+        choices=["rag", "basic", "mcp", "multi"],
         default="rag",
-        help="rag=Agentic RAG（默认），basic=基础对话，mcp=MCP 知识库工具",
+        help=(
+            "rag=Agentic RAG（默认），basic=基础对话，"
+            "mcp=MCP 知识库工具，multi=MultiAgent"
+        ),
     )
     parser.add_argument(
         "--checkpoint-db",
@@ -304,11 +309,35 @@ def main(argv: list[str] | None = None) -> int:
     _configure_stdio()
     configure_logging(args.log_level)
 
-    if args.mode in {"rag", "mcp"} and not Path(settings.chroma_dir).exists():
+    if args.mode in {"rag", "mcp", "multi"} and not Path(
+        settings.chroma_dir
+    ).exists():
         print(
             "提示：知识库索引不存在。请先运行：\n"
             "  uv run python -m app.rag.ingest"
         )
+
+    if args.mode == "multi":
+        from app.multiagent.supervisor import run_multiagent_mode
+
+        logger.info(
+            "cli.multi user=%s thread=%s checkpoint_db=%s memory_db=%s",
+            args.user,
+            args.thread,
+            args.checkpoint_db,
+            args.memory_db,
+        )
+        with open_store(args.memory_db) as store:
+            return asyncio.run(
+                run_multiagent_mode(
+                    question=args.question,
+                    thread_id=args.thread,
+                    user_id=args.user,
+                    store=store,
+                    checkpoint_db=args.checkpoint_db,
+                    stream=not args.no_stream,
+                )
+            )
 
     if args.mode == "mcp":
         # MCP 工具和 ClientSession 是异步 API；MCP 模式使用 AsyncSqliteSaver。
