@@ -27,3 +27,6 @@ data/chroma/
 # Local SQLite databases (checkpoints, long-term memory)
 data/*.sqlite*
 data/*.db
+
+# Saved research reports
+data/reports/

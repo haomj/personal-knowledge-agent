@@ -47,6 +47,7 @@ class Settings:
     checkpoint_db: str
     memory_db: str
     default_user: str
+    reports_dir: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -80,6 +81,7 @@ class Settings:
             ),
             memory_db=os.getenv("MEMORY_DB", "data/memory.sqlite"),
             default_user=os.getenv("DEFAULT_USER", "local-user"),
+            reports_dir=os.getenv("REPORTS_DIR", "data/reports"),
         )
 
 

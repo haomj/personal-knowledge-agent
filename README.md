@@ -1,6 +1,6 @@
 # Personal Knowledge Research Agent
 
-按 10 天计划逐步实现一个可部署的个人知识研究助手。当前进度：**Day 5 — v0.5-multiagent**。
+按 10 天计划逐步实现一个可部署的个人知识研究助手。当前进度：**Day 6 — v0.6-hitl**。
 
 ## 当前能力
 
@@ -12,47 +12,44 @@
 
 ### Day 2：Agentic RAG
 
-- 加载 Markdown / TXT 文档，递归切分 chunk
+- Markdown / TXT 文档加载、递归切分
 - DashScope `text-embedding-v4` 生成 1024 维向量
 - Chroma 本地向量库，cosine 距离
-- 检索结果相关性评分（LLM + function calling）
-- 检索不足时改写查询并重试一次
+- Retrieval Grading、Query Rewriting、最多一次重试
 - 回答带 `[来源: 文件路径]` 引用
 
 ### Day 3：Memory 与持久化
 
-- **短期记忆**：SQLite checkpointer，按 `thread_id` 保存会话状态
-- **重启恢复**：进程退出后，用同一个 `thread_id` 继续对话
+- **短期记忆**：SQLite checkpointer，按 `thread_id` 保存会话
 - **长期记忆**：LangGraph `SqliteStore` 保存用户偏好
-- **跨 thread 共享**：同一个 `user_id` 的不同 thread 共享偏好
-- **用户隔离**：不同 `user_id` 使用不同 namespace
+- 跨 thread 共享、按用户隔离、重启恢复
 
 ### Day 4：MCP
 
-- 独立 MCP Server（stdio transport）
-- 两个工具：`list_documents()`、`search_documents(query, k=4)`
-- 复用 Day 2 的 Chroma Retriever
-- MCP Client：工具发现、直接调用工具
-- `langchain-mcp-adapters`：把 MCP 工具转换成 LangChain Tool
-- Agent 使用 `create_agent` 自主选择并调用 MCP 工具
+- stdio MCP Server：`list_documents()`、`search_documents(query, k=4)`
+- 复用 Day 2 Retriever
+- MCP Client：工具发现、直接调用
+- `langchain-mcp-adapters` 接入 Agent
 
 ### Day 5：MultiAgent
 
-- **Supervisor**：判断任务类型、委派子任务、汇总结果
-- **Knowledge Agent**：通过 MCP 检索本地知识库并总结
-- **Research Agent**：通过 Tavily 联网搜索并总结
-- **Tool-based Handoff**：Supervisor 用 `ask_knowledge_agent` / `ask_research_agent` 两个工具委派
-- **Context Isolation**：子 Agent 只拿子问题，不共享 Supervisor 完整对话
-- **Result Aggregation**：Supervisor 汇总本地来源和网页 URL
-- **任务预算**：每次问题最多 3 次子任务、单个 Agent 最多 2 次
+- Supervisor + Knowledge Agent + Research Agent
+- Tool-based Handoff、Context Isolation、Result Aggregation
+- Knowledge Agent 走 MCP，Research Agent 走 Tavily
+- 每次问题最多 3 次子任务、单个 Agent 最多 2 次
+
+### Day 6：HITL
+
+- 生成研究报告 -> `interrupt()` 暂停 -> 人工审批 -> 保存/取消
+- 使用真实 LangGraph Interrupt，不是 `input()` 或 API 标志位
+- `Command(resume=...)` 恢复；节点会从头重新执行，因此中断前不能有副作用
+- SQLite checkpointer：进程重启后，用同一个 `thread_id` 继续审批
+- 报告保存是幂等的：同样标题+正文不会重复生成文件
 
 ```text
-用户问题
-  -> Supervisor
-     ├─ ask_knowledge_agent -> MCP -> Chroma
-     └─ ask_research_agent  -> Tavily
-  -> Supervisor 汇总
-  -> 最终答案（本地来源 + 网页 URL）
+draft_report -> approval(interrupt)
+                  ├─ approved -> save_report -> END
+                  └─ rejected -> cancel -> END
 ```
 
 ## 环境准备
@@ -87,9 +84,10 @@ RAG_MAX_RETRIES=1
 CHECKPOINT_DB=data/checkpoints.sqlite
 MEMORY_DB=data/memory.sqlite
 DEFAULT_USER=local-user
+REPORTS_DIR=data/reports
 ```
 
-> `.env`、`data/chroma/`、`data/*.sqlite*` 都已被 `.gitignore` 忽略，不要提交真实 Key 或本地会话数据。
+> `.env`、`data/chroma/`、`data/*.sqlite*`、`data/reports/` 都已被 `.gitignore` 忽略。
 
 ## 构建知识库索引
 
@@ -103,28 +101,53 @@ uv run python -m app.rag.ingest
 uv run personal-knowledge-ingest
 ```
 
-默认加载 `data/docs/`，切分后重建 `data/chroma/`。
-
 ## 运行
 
-默认使用 Agentic RAG + Memory：
+默认 Agentic RAG：
 
 ```bash
 uv run python -m app.cli
+```
+
+HITL 模式（交互审批）：
+
+```bash
+uv run python -m app.cli --mode hitl --question "总结 Agentic RAG 的重试策略"
+```
+
+自动批准/拒绝（方便脚本验收）：
+
+```bash
+uv run python -m app.cli --mode hitl \
+  --question "总结 Agentic RAG 的重试策略" \
+  --hitl-decision approve
+```
+
+```bash
+uv run python -m app.cli --mode hitl \
+  --question "总结 MCP 的两种传输方式" \
+  --hitl-decision reject
+```
+
+暂停后重启恢复：
+
+```bash
+uv run python -m app.cli --mode hitl \
+  --question "总结 Memory 的短期与长期记忆" \
+  --thread day6-pause \
+  --hitl-decision pause
+```
+
+```bash
+uv run python -m app.cli --mode hitl \
+  --thread day6-pause \
+  --hitl-decision approve
 ```
 
 MultiAgent 模式：
 
 ```bash
 uv run python -m app.cli --mode multi --user adrian --thread day5-multi
-```
-
-单轮 MultiAgent 提问：
-
-```bash
-uv run python -m app.cli --mode multi \
-  --question "结合本地知识库中 Agentic RAG 的重试策略，以及 2026 年 LangGraph 的最新版本信息，给我一个简短总结。" \
-  --no-stream
 ```
 
 MCP 模式：
@@ -147,10 +170,25 @@ uv run python -m app.mcp.client
 
 ### 查看 MCP Server 日志
 
-默认只输出 WARNING，避免干扰 stdio JSON-RPC。需要排查时：
-
 ```bash
 MCP_LOG_LEVEL=INFO uv run python -m app.cli --mode mcp --question "MCP 有哪些传输方式？"
+```
+
+## HITL 审批方式
+
+`--hitl-decision`：
+
+| 值 | 行为 |
+| --- | --- |
+| `ask`（默认） | 交互输入 y/n/p |
+| `approve` | 自动通过 |
+| `reject` | 自动拒绝 |
+| `pause` | 打印审批请求后退出，下一次同 thread 恢复 |
+
+报告中会显示标题、正文长度和内容预览。审批通过后写入：
+
+```text
+data/reports/<标题>-<内容哈希>.md
 ```
 
 ## 记忆命令
@@ -164,10 +202,6 @@ MCP_LOG_LEVEL=INFO uv run python -m app.cli --mode mcp --question "MCP 有哪些
 /exit
 ```
 
-- `/remember key=value`：把偏好写入当前用户的 Store namespace。
-- `/preferences`：查看当前用户的全部长期偏好。
-- `/new`：新建一个 thread；长期偏好仍然共享。
-
 ## 验证重启恢复
 
 ```bash
@@ -180,31 +214,33 @@ printf '我叫什么名字？只回答名字。\n/exit\n' | \
   uv run python -m app.cli --mode basic --thread day3-persist --user adrian
 ```
 
-第二个进程会从 SQLite checkpoint 恢复第一轮历史，回答 `Adrian`。
-
-MCP/MultiAgent 模式同样支持跨进程恢复，内部使用 `AsyncSqliteSaver`。
-
 ## 测试
 
-离线测试（不访问模型/Embedding/Tavily API）：
+离线测试：
 
 ```bash
 uv run pytest
 ```
 
-MultiAgent 真实端到端测试：
+HITL 测试：
+
+```bash
+uv run pytest tests/test_hitl.py -q
+```
+
+真实 MultiAgent 测试：
 
 ```bash
 RUN_LIVE_TESTS=1 uv run pytest tests/test_multiagent_live.py -q
 ```
 
-MCP 真实端到端测试：
+真实 MCP 测试：
 
 ```bash
 RUN_LIVE_TESTS=1 uv run pytest tests/test_mcp_live.py -q
 ```
 
-RAG 真实端到端测试：
+真实 RAG 测试：
 
 ```bash
 RUN_LIVE_TESTS=1 uv run pytest tests/test_rag_live.py -q
@@ -215,59 +251,48 @@ RUN_LIVE_TESTS=1 uv run pytest tests/test_rag_live.py -q
 ```text
 app/
 ├── config.py            # 环境变量、模型/Embedding 工厂、日志
-├── state.py             # AgentState（messages + RAG + user_id）
-├── graph.py             # 基础图，支持 Store 偏好注入
+├── state.py             # AgentState
+├── graph.py             # 基础图
 ├── entrypoint.py        # LangGraph Server 加载入口
-├── cli.py               # rag / basic / mcp / multi 四种模式
+├── cli.py               # rag / basic / mcp / multi / hitl
 ├── text.py              # 文本清洗
-├── rag/
-│   ├── loader.py        # Markdown/TXT 加载
-│   ├── splitter.py      # 递归切分
-│   ├── embeddings.py    # Embedding 工厂
-│   ├── vector_store.py  # Chroma 创建/重建
-│   ├── retriever.py     # 相似度检索
-│   ├── evaluator.py     # Retrieval Grading
-│   ├── rewriter.py      # Query Rewriting
-│   ├── graph.py         # Agentic RAG 图
-│   └── ingest.py        # 索引构建脚本
-├── mcp/
-│   ├── server.py        # stdio MCP Server
-│   ├── client.py        # 原始 MCP Client + LangChain 工具加载
-│   └── agent.py         # MCP 工具调用 Agent
-├── multiagent/
-│   ├── knowledge.py     # Knowledge Agent（MCP 本地知识库）
-│   ├── research.py      # Research Agent（Tavily）
-│   ├── supervisor.py    # Supervisor + 任务预算 + 汇总
-│   └── models.py        # SubagentResult
-└── memory/
-    ├── checkpointer.py  # SQLite 同步/异步短期记忆
-    └── store.py         # SQLite 长期记忆（用户偏好）
+├── rag/                 # 文档加载、切分、Embedding、Chroma、RAG 图
+├── mcp/                 # MCP Server / Client / Agent
+├── multiagent/          # Supervisor + Knowledge/Research Agent
+├── hitl/
+│   ├── report.py        # 报告生成、幂等保存
+│   ├── graph.py         # interrupt + Command 恢复图
+│   └── cli.py           # 审批交互、暂停/恢复
+└── memory/              # SQLite checkpointer 与 Store
 
 data/
-├── docs/                # 10 篇本地技术文档（会提交）
-├── chroma/              # 生成的向量索引（不提交）
+├── docs/                # 10 篇技术文档（提交）
+├── chroma/              # 向量索引（不提交）
 ├── checkpoints.sqlite   # 会话 checkpoint（不提交）
-└── memory.sqlite        # 用户长期偏好（不提交）
+├── memory.sqlite        # 用户偏好（不提交）
+└── reports/             # 审批后保存的报告（不提交）
 
 tests/
-├── test_graph.py        # Day 1 基础图
-├── test_text.py         # 输入清洗
-├── test_rag_pipeline.py # 加载/切分/Chroma
-├── test_rag_graph.py    # RAG 路由
-├── test_memory.py       # SQLite 重启恢复/偏好共享/用户隔离
-├── test_mcp.py          # MCP 工具发现/list_documents
-├── test_multiagent.py   # 任务预算/子 Agent
-├── test_smoke_live.py   # Day 1 真实模型
-├── test_rag_live.py     # Day 2 真实 RAG
-├── test_mcp_live.py     # Day 4 真实 MCP
-└── test_multiagent_live.py # Day 5 真实 MultiAgent
+├── test_graph.py
+├── test_text.py
+├── test_rag_pipeline.py
+├── test_rag_graph.py
+├── test_memory.py
+├── test_mcp.py
+├── test_multiagent.py
+├── test_hitl.py
+├── test_smoke_live.py
+├── test_rag_live.py
+├── test_mcp_live.py
+└── test_multiagent_live.py
 
 docs/
 ├── day01-langgraph.md
 ├── day02-agentic-rag.md
 ├── day03-memory.md
 ├── day04-mcp.md
-└── day05-multiagent.md
+├── day05-multiagent.md
+└── day06-hitl.md
 ```
 
 ## 开发进度
@@ -277,7 +302,7 @@ docs/
 - [x] Day 3：Memory 与持久化
 - [x] Day 4：MCP
 - [x] Day 5：MultiAgent
-- [ ] Day 6：HITL
+- [x] Day 6：HITL
 - [ ] Day 7：Middleware
 - [ ] Day 8：Runtime API 与 Web UI
 - [ ] Day 9：Docker 部署
