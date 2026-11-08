@@ -206,6 +206,14 @@ Docker 验收记录：
 - `docs/api.md`：HTTP/SSE/HITL API
 - `docs/day01-...` ~ `docs/day09-...`：每日源码与实验笔记
 - `docs/day10-e2e.md`：本文档
+- `docs/assets/rag-demo.jpg`、`docs/assets/hitl-approval.jpg`：Web UI 演示截图
+
+### 发布工程
+
+- `LICENSE`：MIT
+- `.github/workflows/ci.yml`：离线测试 + Docker build
+- README CI / License badge
+- `scripts/verify.sh`：一键离线 + live 验收
 
 ### 版本
 
@@ -225,7 +233,6 @@ Docker 验收记录：
 
 ## 10. 后续路线
 
-- GitHub Actions：离线测试、lint、Docker build。
 - LangSmith / OpenTelemetry：trace、指标、告警。
 - Postgres checkpointer/store：多实例。
 - 多用户认证与 RBAC。

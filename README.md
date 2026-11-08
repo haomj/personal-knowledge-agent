@@ -2,6 +2,9 @@
 
 一个面向个人技术文档的 AI Agent：本地知识库 RAG、联网研究、多 Agent 协作、长期记忆、人工审批和可部署 Web UI。
 
+[![CI](https://github.com/haomj/personal-knowledge-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/haomj/personal-knowledge-agent/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 > 当前版本：**v1.0.0** · Day 10 交付 · 46 个离线测试 + 6 个真实 API 测试
 
 > 技术栈：LangGraph · LangChain 1.x · DeepSeek · DashScope Embedding · Chroma · MCP · FastAPI · SQLite · Docker
@@ -16,6 +19,16 @@
 - **Middleware**：日志、角色权限、只读工具重试三层横切逻辑。
 - **Web Runtime**：FastAPI + SSE 流式对话、工具步骤展示、HITL 审批卡片。
 - **Docker**：非 root 镜像、命名 volume 持久化、健康检查、可选 API Token。
+
+## 演示
+
+Agentic RAG：流式回答、检索/评分/生成步骤和来源。
+
+![Agentic RAG demo](docs/assets/rag-demo.jpg)
+
+HITL：生成报告后暂停，等待人工审批。
+
+![HITL approval demo](docs/assets/hitl-approval.jpg)
 
 ## 架构
 
@@ -251,10 +264,12 @@ data/
 └── reports/         # 审批生成的报告（不提交）
 
 docs/                # 每日源码/实验笔记 + 架构/API/部署
+docs/assets/         # Web UI 演示截图
 tests/               # 46 个离线测试 + 6 个真实 API 测试
 scripts/verify.sh    # 一键验收
 Dockerfile
 compose.yaml
+.github/workflows/ci.yml
 ```
 
 ## 文档索引
@@ -288,3 +303,7 @@ compose.yaml
 - 多用户认证与 RBAC。
 - 报告下载、版本管理与审计。
 - 更完整的 RAG 评估集（Recall@K、faithfulness）。
+
+## License
+
+MIT，详见 [LICENSE](LICENSE)。

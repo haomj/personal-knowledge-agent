@@ -4,6 +4,7 @@ version = "1.0.0"
 description = "A personal knowledge research agent built with LangGraph, Agentic RAG, MCP, MultiAgent and HITL"
 readme = "README.md"
 requires-python = ">=3.12"
+license = { text = "MIT" }
 keywords = ["langgraph", "langchain", "rag", "mcp", "ai-agent", "fastapi"]
 dependencies = [
     "fastapi>=0.162.2",
