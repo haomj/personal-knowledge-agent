@@ -1,13 +1,14 @@
 """Personal Knowledge Agent 命令行入口。
 
-支持五种模式：
+支持六种模式：
 - rag：Agentic RAG + Memory（默认）
 - basic：基础对话 + Memory
 - mcp：通过 MCP Client 调用本地知识库工具
 - multi：Supervisor + Knowledge/Research 子 Agent
 - hitl：生成报告 -> 暂停 -> 人工审批 -> 保存/取消
+- middleware：日志、权限、重试三个 Middleware 的演示 Agent
 
-Day 6 默认使用 SQLite 短期记忆和 Store 长期记忆：
+Day 7 默认使用 SQLite 短期记忆和 Store 长期记忆：
 - 同一个 ``--thread`` 重启后可以恢复历史；
 - 同一个 ``--user`` 的不同 thread 共享偏好；
 - ``/remember key=value`` 显式写入偏好，``/preferences`` 查看。
@@ -19,6 +20,7 @@ Day 6 默认使用 SQLite 短期记忆和 Store 长期记忆：
     uv run python -m app.cli --mode mcp --question "MCP 的 stdio 适合什么场景？"
     uv run python -m app.cli --mode multi --question "结合本地文档和最新资料总结"
     uv run python -m app.cli --mode hitl --question "总结 Agentic RAG 的重试策略"
+    uv run python -m app.cli --mode middleware --role admin --question "保存一份报告"
 """
 
 from __future__ import annotations
@@ -275,7 +277,7 @@ def chat_loop(
 def main(argv: list[str] | None = None) -> int:
     settings = get_settings()
     parser = argparse.ArgumentParser(
-        description="Personal Knowledge Agent - Day 6 CLI"
+        description="Personal Knowledge Agent - Day 7 CLI"
     )
     parser.add_argument("-q", "--question", help="只问一个问题然后退出")
     parser.add_argument(
@@ -286,12 +288,19 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--mode",
-        choices=["rag", "basic", "mcp", "multi", "hitl"],
+        choices=["rag", "basic", "mcp", "multi", "hitl", "middleware"],
         default="rag",
         help=(
             "rag=Agentic RAG（默认），basic=基础对话，"
-            "mcp=MCP 知识库工具，multi=MultiAgent，hitl=人工审批"
+            "mcp=MCP 知识库工具，multi=MultiAgent，hitl=人工审批，"
+            "middleware=日志/权限/重试中间件"
         ),
+    )
+    parser.add_argument(
+        "--role",
+        choices=["admin", "viewer"],
+        default="viewer",
+        help="middleware 模式的用户角色；高风险工具仅 admin 可用",
     )
     parser.add_argument(
         "--hitl-decision",
@@ -316,13 +325,35 @@ def main(argv: list[str] | None = None) -> int:
     _configure_stdio()
     configure_logging(args.log_level)
 
-    if args.mode in {"rag", "mcp", "multi", "hitl"} and not Path(
+    if args.mode in {"rag", "mcp", "multi", "hitl", "middleware"} and not Path(
         settings.chroma_dir
     ).exists():
         print(
             "提示：知识库索引不存在。请先运行：\n"
             "  uv run python -m app.rag.ingest"
         )
+
+    if args.mode == "middleware":
+        from app.middleware.agent import (
+            build_middleware_agent,
+            run_middleware_cli,
+        )
+
+        logger.info(
+            "cli.middleware user=%s role=%s thread=%s",
+            args.user,
+            args.role,
+            args.thread,
+        )
+        with open_checkpointer(args.checkpoint_db) as checkpointer:
+            agent = build_middleware_agent(checkpointer=checkpointer)
+            return run_middleware_cli(
+                agent,
+                question=args.question,
+                thread_id=args.thread,
+                user_id=args.user,
+                role=args.role,
+            )
 
     if args.mode == "hitl":
         from app.hitl.cli import run_hitl_cli

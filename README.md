@@ -1,6 +1,6 @@
 # Personal Knowledge Research Agent
 
-按 10 天计划逐步实现一个可部署的个人知识研究助手。当前进度：**Day 6 — v0.6-hitl**。
+按 10 天计划逐步实现一个可部署的个人知识研究助手。当前进度：**Day 7 — v0.7-middleware**。
 
 ## 当前能力
 
@@ -50,6 +50,22 @@
 draft_report -> approval(interrupt)
                   ├─ approved -> save_report -> END
                   └─ rejected -> cancel -> END
+```
+
+### Day 7：Middleware
+
+- **LoggingMiddleware**：记录模型调用、工具调用、耗时和错误
+- **PermissionMiddleware**：按 `UserContext.role` 拦截高风险工具，仅 `admin` 可保存报告
+- **RetryMiddleware**：只对只读工具重试，指数退避；有副作用的工具绝不自动重试
+- 中间件顺序：`Logging -> Permission -> Retry`
+- CLI 支持 `--role admin|viewer`，交互中可用 `/role` 切换
+- 拒绝权限时返回 `ToolMessage(status="error")`，Agent 能向用户解释，而不是崩溃
+
+```text
+Logging(before_model/model)
+  -> Permission(tool)
+       -> Retry(tool)
+            -> 业务工具
 ```
 
 ## 环境准备
@@ -144,6 +160,27 @@ uv run python -m app.cli --mode hitl \
   --hitl-decision approve
 ```
 
+Middleware 模式（viewer 会被权限拦截）：
+
+```bash
+uv run python -m app.cli --mode middleware --role viewer \
+  --question "请调用 save_research_report 工具，标题 middleware-denied，正文 hello。"
+```
+
+admin 可以保存：
+
+```bash
+uv run python -m app.cli --mode middleware --role admin \
+  --question "请调用 save_research_report 工具，标题 middleware-allowed，正文 hello。"
+```
+
+验证重试中间件：
+
+```bash
+uv run python -m app.cli --mode middleware --role viewer \
+  --question "请调用 lookup_with_retry 查询 middleware order。"
+```
+
 MultiAgent 模式：
 
 ```bash
@@ -228,6 +265,12 @@ HITL 测试：
 uv run pytest tests/test_hitl.py -q
 ```
 
+Middleware 测试：
+
+```bash
+uv run pytest tests/test_middleware.py -q
+```
+
 真实 MultiAgent 测试：
 
 ```bash
@@ -254,11 +297,17 @@ app/
 ├── state.py             # AgentState
 ├── graph.py             # 基础图
 ├── entrypoint.py        # LangGraph Server 加载入口
-├── cli.py               # rag / basic / mcp / multi / hitl
+├── cli.py               # rag / basic / mcp / multi / hitl / middleware
 ├── text.py              # 文本清洗
 ├── rag/                 # 文档加载、切分、Embedding、Chroma、RAG 图
 ├── mcp/                 # MCP Server / Client / Agent
 ├── multiagent/          # Supervisor + Knowledge/Research Agent
+├── middleware/
+│   ├── logging.py       # 日志与耗时
+│   ├── permission.py    # 角色权限拦截
+│   ├── retry.py         # 只读工具重试
+│   ├── tools.py         # 演示工具
+│   └── agent.py         # Middleware Agent 与 CLI
 ├── hitl/
 │   ├── report.py        # 报告生成、幂等保存
 │   ├── graph.py         # interrupt + Command 恢复图
@@ -281,6 +330,7 @@ tests/
 ├── test_mcp.py
 ├── test_multiagent.py
 ├── test_hitl.py
+├── test_middleware.py
 ├── test_smoke_live.py
 ├── test_rag_live.py
 ├── test_mcp_live.py
@@ -292,7 +342,8 @@ docs/
 ├── day03-memory.md
 ├── day04-mcp.md
 ├── day05-multiagent.md
-└── day06-hitl.md
+├── day06-hitl.md
+└── day07-middleware.md
 ```
 
 ## 开发进度
@@ -303,7 +354,7 @@ docs/
 - [x] Day 4：MCP
 - [x] Day 5：MultiAgent
 - [x] Day 6：HITL
-- [ ] Day 7：Middleware
+- [x] Day 7：Middleware
 - [ ] Day 8：Runtime API 与 Web UI
 - [ ] Day 9：Docker 部署
 - [ ] Day 10：端到端测试与交付
