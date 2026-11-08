@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Awaitable, Callable
 
@@ -24,7 +25,7 @@ async def tavily_search(query: str, max_results: int) -> list[dict[str, Any]]:
         topic="general",
         include_answer=False,
     )
-    raw = await tool.ainvoke({"query": query})
+    raw = await asyncio.to_thread(tool.invoke, {"query": query})
     if isinstance(raw, dict):
         return list(raw.get("results", []))
     if isinstance(raw, list):
@@ -83,7 +84,7 @@ async def run_research_agent(
         f"子问题：{query}\n\n"
         f"搜索结果：\n{_format_results(results)}"
     )
-    response = await chat_model.ainvoke(prompt)
+    response = await asyncio.to_thread(chat_model.invoke, prompt)
     answer = content_text(response.content)
 
     sources = sorted(

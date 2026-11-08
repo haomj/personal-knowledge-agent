@@ -1,9 +1,10 @@
 [project]
 name = "personal-knowledge-agent"
-version = "0.1.0"
-description = "Add your description here"
+version = "1.0.0"
+description = "A personal knowledge research agent built with LangGraph, Agentic RAG, MCP, MultiAgent and HITL"
 readme = "README.md"
 requires-python = ">=3.12"
+keywords = ["langgraph", "langchain", "rag", "mcp", "ai-agent", "fastapi"]
 dependencies = [
     "fastapi>=0.162.2",
     "langchain>=1.4.5",
@@ -23,6 +24,10 @@ dependencies = [
 personal-knowledge-agent = "app.cli:main"
 personal-knowledge-ingest = "app.rag.ingest:main"
 personal-knowledge-web = "app.web.server:run"
+
+[project.urls]
+Homepage = "https://github.com/haomj/personal-knowledge-agent"
+Repository = "https://github.com/haomj/personal-knowledge-agent"
 
 [build-system]
 requires = ["uv_build>=0.12.23,<0.13.0"]

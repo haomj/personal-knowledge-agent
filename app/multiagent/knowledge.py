@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any, Awaitable, Callable
@@ -77,7 +78,7 @@ async def run_knowledge_agent(
         f"子问题：{query}\n\n"
         f"检索资料：\n{_format_results(results)}"
     )
-    response = await chat_model.ainvoke(prompt)
+    response = await asyncio.to_thread(chat_model.invoke, prompt)
     answer = content_text(response.content)
 
     sources = sorted(
