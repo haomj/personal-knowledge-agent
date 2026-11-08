@@ -1,6 +1,6 @@
 # Personal Knowledge Research Agent
 
-按 10 天计划逐步实现一个可部署的个人知识研究助手。当前进度：**Day 7 — v0.7-middleware**。
+按 10 天计划逐步实现一个可部署的个人知识研究助手。当前进度：**Day 8 — v0.8-web-runtime**。
 
 ## 当前能力
 
@@ -66,6 +66,22 @@ Logging(before_model/model)
   -> Permission(tool)
        -> Retry(tool)
             -> 业务工具
+```
+
+### Day 8：Runtime API 与 Web UI
+
+- FastAPI Runtime：`/api/chat/stream`、`/api/hitl/start`、`/api/hitl/resume`、线程状态接口
+- SSE 流式返回 RAG token，并展示检索、评分、改写、生成步骤
+- HITL 审批卡片：浏览器中通过/拒绝，恢复同一个 thread
+- Thread + User 组合成 checkpoint key，避免不同用户串线
+- 最小 Web Chat UI：无需前端构建，直接由 FastAPI 提供静态页面
+- 默认只监听 `127.0.0.1:8000`，适合本地开发；公开访问前必须加认证和 HTTPS
+
+```text
+Browser
+  -> FastAPI (/api/chat/stream, /api/hitl/*)
+  -> LangGraph RAG / HITL Graph
+  -> SQLite checkpoint + Store
 ```
 
 ## 环境准备
@@ -181,6 +197,24 @@ uv run python -m app.cli --mode middleware --role viewer \
   --question "请调用 lookup_with_retry 查询 middleware order。"
 ```
 
+Web Runtime：
+
+```bash
+uv run personal-knowledge-web
+```
+
+然后打开：
+
+```text
+http://127.0.0.1:8000
+```
+
+页面支持：
+
+- Agentic RAG 流式对话，展示检索/评分/改写步骤和来源；
+- HITL 报告审批，审批通过后保存到 `data/reports/`；
+- User ID 和 Thread ID；不同用户同一 thread 不会串线。
+
 MultiAgent 模式：
 
 ```bash
@@ -271,6 +305,12 @@ Middleware 测试：
 uv run pytest tests/test_middleware.py -q
 ```
 
+Web API 测试：
+
+```bash
+uv run pytest tests/test_web.py -q
+```
+
 真实 MultiAgent 测试：
 
 ```bash
@@ -299,6 +339,10 @@ app/
 ├── entrypoint.py        # LangGraph Server 加载入口
 ├── cli.py               # rag / basic / mcp / multi / hitl / middleware
 ├── text.py              # 文本清洗
+├── web/
+│   ├── server.py        # FastAPI Runtime + SSE + HITL API
+│   └── static/
+│       └── index.html   # 最小 Web Chat UI
 ├── rag/                 # 文档加载、切分、Embedding、Chroma、RAG 图
 ├── mcp/                 # MCP Server / Client / Agent
 ├── multiagent/          # Supervisor + Knowledge/Research Agent
@@ -331,6 +375,7 @@ tests/
 ├── test_multiagent.py
 ├── test_hitl.py
 ├── test_middleware.py
+├── test_web.py
 ├── test_smoke_live.py
 ├── test_rag_live.py
 ├── test_mcp_live.py
@@ -343,7 +388,8 @@ docs/
 ├── day04-mcp.md
 ├── day05-multiagent.md
 ├── day06-hitl.md
-└── day07-middleware.md
+├── day07-middleware.md
+└── day08-web-runtime.md
 ```
 
 ## 开发进度
@@ -355,6 +401,6 @@ docs/
 - [x] Day 5：MultiAgent
 - [x] Day 6：HITL
 - [x] Day 7：Middleware
-- [ ] Day 8：Runtime API 与 Web UI
+- [x] Day 8：Runtime API 与 Web UI
 - [ ] Day 9：Docker 部署
 - [ ] Day 10：端到端测试与交付

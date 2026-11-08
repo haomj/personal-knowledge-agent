@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Personal Knowledge Agent</title>
+  <style>
+    :root {
+      --bg: #f5f6f8;
+      --panel: #ffffff;
+      --ink: #17202a;
+      --muted: #6b7280;
+      --line: #e3e7ee;
+      --accent: #2563eb;
+      --accent-soft: #e8efff;
+      --ok: #0f766e;
+      --warn: #b45309;
+      --err: #b91c1c;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+        "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      height: 100vh;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: 270px 1fr;
+      height: 100vh;
+    }
+    .sidebar {
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      padding: 22px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+    .brand { font-size: 18px; font-weight: 700; letter-spacing: -0.02em; }
+    .sub { color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .health {
+      font-size: 12px; color: var(--muted);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #9ca3af; }
+    .dot.ok { background: var(--ok); }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    input, select, textarea {
+      width: 100%; border: 1px solid var(--line); border-radius: 9px;
+      padding: 9px 10px; font: inherit; color: var(--ink); background: #fff;
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: 2px solid var(--accent-soft); border-color: var(--accent);
+    }
+    .row { display: flex; gap: 8px; }
+    .row input { flex: 1; }
+    button {
+      border: 0; border-radius: 9px; padding: 9px 13px; font: inherit;
+      cursor: pointer; background: var(--accent); color: white; font-weight: 600;
+    }
+    button.secondary { background: #eef1f6; color: var(--ink); }
+    button.danger { background: #fee2e2; color: var(--err); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+    .hint { color: var(--muted); font-size: 12px; line-height: 1.6; }
+    main {
+      display: flex; flex-direction: column; min-width: 0;
+      height: 100vh;
+    }
+    .messages {
+      flex: 1; overflow-y: auto; padding: 26px 4vw 10px;
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .msg {
+      max-width: 780px; padding: 12px 14px; border-radius: var(--radius);
+      line-height: 1.65; white-space: pre-wrap; word-break: break-word;
+      border: 1px solid var(--line); background: var(--panel);
+    }
+    .msg.user { align-self: flex-end; background: var(--accent); color: #fff; border-color: var(--accent); }
+    .msg.assistant { align-self: flex-start; }
+    .msg.system { align-self: center; background: #f0f2f6; color: var(--muted); font-size: 13px; border-style: dashed; }
+    .msg.tool { align-self: flex-start; background: #f8fafc; font-size: 13px; }
+    .msg.error { align-self: flex-start; background: #fff1f2; color: var(--err); border-color: #fecdd3; }
+    .steps { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0; }
+    .step {
+      font-size: 12px; color: var(--muted); background: #eef1f6;
+      border-radius: 999px; padding: 5px 10px;
+    }
+    .step.warn { background: #fff7ed; color: var(--warn); }
+    .sources {
+      margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line);
+      font-size: 12px; color: var(--muted);
+    }
+    .sources a { color: var(--accent); word-break: break-all; }
+    .approval {
+      margin: 0 4vw 10px; border: 1px solid #fcd34d; background: #fffbeb;
+      border-radius: var(--radius); padding: 16px; max-width: 780px;
+    }
+    .approval h3 { margin: 0 0 8px; font-size: 15px; }
+    .preview {
+      max-height: 220px; overflow: auto; white-space: pre-wrap;
+      font-size: 13px; line-height: 1.6; background: #fff;
+      border: 1px solid #fde68a; border-radius: 9px; padding: 10px;
+      margin: 8px 0 12px;
+    }
+    .approval .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .composer {
+      border-top: 1px solid var(--line); background: var(--panel);
+      padding: 14px 4vw 20px; display: flex; gap: 10px; align-items: flex-end;
+    }
+    .composer textarea {
+      flex: 1; resize: none; min-height: 54px; max-height: 180px;
+      line-height: 1.5;
+    }
+    .empty {
+      color: var(--muted); text-align: center; margin: auto; font-size: 14px;
+      line-height: 1.8;
+    }
+    @media (max-width: 560px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .messages, .composer { padding-left: 18px; padding-right: 18px; }
+      .approval { margin-left: 18px; margin-right: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div>
+        <div class="brand">Personal Knowledge Agent</div>
+        <div class="sub">Day 8 Runtime · RAG + HITL</div>
+      </div>
+      <div class="health"><span class="dot" id="healthDot"></span><span id="healthText">检查服务...</span></div>
+
+      <div>
+        <label for="userId">User ID</label>
+        <input id="userId" value="web-user" autocomplete="off">
+      </div>
+
+      <div>
+        <label for="mode">模式</label>
+        <select id="mode">
+          <option value="rag">Agentic RAG（流式）</option>
+          <option value="hitl">HITL 报告审批</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="threadId">Thread ID</label>
+        <div class="row">
+          <input id="threadId" autocomplete="off">
+          <button class="secondary" id="newThread" type="button">新建</button>
+        </div>
+      </div>
+
+      <button class="secondary" id="loadThread" type="button">加载会话</button>
+
+      <div class="hint" id="modeHint">
+        RAG 模式会流式返回回答，并展示检索、评分、改写等步骤。
+      </div>
+    </aside>
+
+    <main>
+      <div class="messages" id="messages">
+        <div class="empty">在下方输入问题开始对话。<br>HITL 模式会先生成报告，再暂停等待审批。</div>
+      </div>
+
+      <div class="approval" id="approval" hidden>
+        <h3 id="approvalTitle">等待人工审批</h3>
+        <div class="preview" id="approvalPreview"></div>
+        <div style="margin-bottom:10px">
+          <label for="feedback">审批意见（可选）</label>
+          <input id="feedback" placeholder="例如：同意保存 / 标题需要修改">
+        </div>
+        <div class="actions">
+          <button id="approveBtn" type="button">通过并保存</button>
+          <button class="danger" id="rejectBtn" type="button">拒绝</button>
+        </div>
+      </div>
+
+      <form class="composer" id="composer">
+        <textarea id="input" placeholder="输入问题，Enter 发送，Shift+Enter 换行"></textarea>
+        <button id="sendBtn" type="submit">发送</button>
+      </form>
+    </main>
+  </div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const messagesEl = $("messages");
+  const approvalEl = $("approval");
+  const approvalTitle = $("approvalTitle");
+  const approvalPreview = $("approvalPreview");
+  const feedbackEl = $("feedback");
+  const inputEl = $("input");
+  const sendBtn = $("sendBtn");
+  const modeEl = $("mode");
+  const userIdEl = $("userId");
+  const threadIdEl = $("threadId");
+
+  let currentApproval = null;
+  let assistantEl = null;
+  let assistantStepEl = null;
+
+  function threadId() {
+    if (!threadIdEl.value.trim()) {
+      threadIdEl.value = Math.random().toString(36).slice(2, 14);
+    }
+    return threadIdEl.value.trim();
+  }
+
+  function userId() {
+    return (userIdEl.value.trim() || "web-user");
+  }
+
+  function clearMessages() {
+    messagesEl.innerHTML = "";
+    assistantEl = null;
+  }
+
+  function addMessage(role, text) {
+    const el = document.createElement("div");
+    el.className = `msg ${role}`;
+    el.textContent = text;
+    messagesEl.appendChild(el);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return el;
+  }
+
+  function addStep(text, warn = false) {
+    if (!assistantStepEl) {
+      assistantStepEl = document.createElement("div");
+      assistantStepEl.className = "steps";
+      messagesEl.appendChild(assistantStepEl);
+    }
+    const el = document.createElement("span");
+    el.className = `step${warn ? " warn" : ""}`;
+    el.textContent = text;
+    assistantStepEl.appendChild(el);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function addSources(sources) {
+    if (!Array.isArray(sources) || sources.length === 0) return;
+    const box = document.createElement("div");
+    box.className = "sources";
+    box.textContent = "检索来源：";
+    sources.forEach((source) => {
+      const line = document.createElement("div");
+      line.textContent = `- ${source.source || "unknown"}`;
+      if (source.score !== undefined) {
+        line.textContent += ` (score=${Number(source.score).toFixed(3)})`;
+      }
+      box.appendChild(line);
+    });
+    messagesEl.appendChild(box);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  async function health() {
+    try {
+      const res = await fetch("/api/health");
+      const data = await res.json();
+      $("healthDot").classList.add("ok");
+      $("healthText").textContent = `服务正常 · ${data.model} · ${data.modes.join(" / ")}`;
+    } catch (err) {
+      $("healthText").textContent = `服务不可用：${err}`;
+    }
+  }
+
+  async function newThread() {
+    try {
+      const res = await fetch("/api/threads", { method: "POST" });
+      const data = await res.json();
+      threadIdEl.value = data.thread_id;
+      clearMessages();
+      hideApproval();
+      addMessage("system", `新会话：${data.thread_id}`);
+    } catch (err) {
+      addMessage("error", `创建会话失败：${err}`);
+    }
+  }
+
+  async function loadThread() {
+    const mode = modeEl.value;
+    try {
+      const url = `/api/threads/${encodeURIComponent(threadId())}?mode=${mode}&user_id=${encodeURIComponent(userId())}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      clearMessages();
+      hideApproval();
+      if (!data.messages.length) {
+        addMessage("system", "该会话还没有消息。");
+      }
+      data.messages.forEach((msg) => addMessage(msg.role, msg.content));
+      if (data.sources && data.sources.length) addSources(data.sources);
+      if (data.interrupt) showApproval(data.interrupt);
+    } catch (err) {
+      addMessage("error", `加载会话失败：${err}`);
+    }
+  }
+
+  function showApproval(payload) {
+    currentApproval = payload;
+    approvalTitle.textContent = `待审批：${payload.title || "研究报告"}`;
+    approvalPreview.textContent = payload.content_preview || "";
+    feedbackEl.value = "";
+    approvalEl.hidden = false;
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    approvalEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+
+  function hideApproval() {
+    currentApproval = null;
+    approvalEl.hidden = true;
+    feedbackEl.value = "";
+  }
+
+  async function resumeApproval(approved) {
+    if (!currentApproval) return;
+    $("approveBtn").disabled = true;
+    $("rejectBtn").disabled = true;
+    try {
+      const res = await fetch("/api/hitl/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          thread_id: threadId(),
+          user_id: userId(),
+          approved,
+          feedback: feedbackEl.value.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+      hideApproval();
+      if (data.status === "saved") {
+        addMessage("system", `报告已保存：${data.report_path}`);
+      } else if (data.status === "cancelled") {
+        addMessage("system", "已取消保存。");
+      } else if (data.status === "error") {
+        addMessage("error", `保存失败：${data.feedback}`);
+      } else {
+        addMessage("system", `流程结束：${data.status}`);
+      }
+    } catch (err) {
+      addMessage("error", `审批失败：${err}`);
+    } finally {
+      $("approveBtn").disabled = false;
+      $("rejectBtn").disabled = false;
+    }
+  }
+
+  function resetAssistant() {
+    assistantEl = null;
+    assistantStepEl = null;
+  }
+
+  async function sendRag(text) {
+    addMessage("user", text);
+    resetAssistant();
+    assistantEl = document.createElement("div");
+    assistantEl.className = "msg assistant";
+    messagesEl.appendChild(assistantEl);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+
+    const res = await fetch("/api/chat/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: text,
+        thread_id: threadId(),
+        user_id: userId(),
+      }),
+    });
+    if (!res.ok || !res.body) {
+      throw new Error(await res.text());
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    const handle = (event) => {
+      if (event.type === "token") {
+        assistantEl.textContent += event.text;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      } else if (event.type === "step") {
+        addStep(event.label, event.node === "grade" && event.label.includes("不足"));
+      } else if (event.type === "sources") {
+        addSources(event.sources);
+      } else if (event.type === "error") {
+        addMessage("error", event.message);
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop();
+      for (const part of parts) {
+        const line = part.split("\n").find((l) => l.startsWith("data: "));
+        if (!line) continue;
+        try { handle(JSON.parse(line.slice(6))); } catch (_) {}
+      }
+    }
+  }
+
+  async function sendHitl(text) {
+    addMessage("user", text);
+    const res = await fetch("/api/hitl/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: text,
+        thread_id: threadId(),
+        user_id: userId(),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || JSON.stringify(data));
+
+    if (data.status === "interrupt" && data.interrupt) {
+      addMessage("tool", `工具调用：save_research_report（等待人工审批）\n标题：${data.interrupt.title || ""}`);
+      showApproval(data.interrupt);
+    } else if (data.status === "saved") {
+      addMessage("system", `报告已保存：${data.report_path}`);
+    } else {
+      addMessage("system", `流程结束：${data.status}`);
+    }
+  }
+
+  async function send() {
+    const text = inputEl.value.trim();
+    if (!text) return;
+    inputEl.value = "";
+    sendBtn.disabled = true;
+    try {
+      if (modeEl.value === "hitl") {
+        await sendHitl(text);
+      } else {
+        await sendRag(text);
+      }
+    } catch (err) {
+      addMessage("error", `请求失败：${err}`);
+    } finally {
+      sendBtn.disabled = false;
+      inputEl.focus();
+    }
+  }
+
+  $("composer").addEventListener("submit", (event) => {
+    event.preventDefault();
+    send();
+  });
+  inputEl.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      send();
+    }
+  });
+  $("newThread").addEventListener("click", newThread);
+  $("loadThread").addEventListener("click", loadThread);
+  $("approveBtn").addEventListener("click", () => resumeApproval(true));
+  $("rejectBtn").addEventListener("click", () => resumeApproval(false));
+  modeEl.addEventListener("change", () => {
+    hideApproval();
+    $("modeHint").textContent = modeEl.value === "hitl"
+      ? "HITL 模式会生成报告、暂停审批，通过后保存到 data/reports/。"
+      : "RAG 模式会流式返回回答，并展示检索、评分、改写等步骤。";
+  });
+
+  threadId();
+  health();
+  addMessage("system", "输入问题开始对话。HITL 模式会暂停等待审批。");
+})();
+</script>
+</body>
+</html>
