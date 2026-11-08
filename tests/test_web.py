@@ -177,3 +177,24 @@ def test_hitl_resume_without_pending_returns_409(tmp_path):
             },
         )
         assert response.status_code == 409
+
+
+def test_optional_api_token_auth(tmp_path):
+    app = create_app(
+        rag_graph=FakeRagGraph(),
+        hitl_graph=_make_hitl_graph(tmp_path),
+        auth_token="secret-token",
+    )
+    with TestClient(app) as client:
+        health = client.get("/api/health")
+        assert health.status_code == 200
+        assert health.json()["auth_required"] is True
+
+        denied = client.post("/api/threads")
+        assert denied.status_code == 401
+
+        allowed = client.post(
+            "/api/threads",
+            headers={"X-API-Key": "secret-token"},
+        )
+        assert allowed.status_code == 200

@@ -21,13 +21,14 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 from pydantic import BaseModel, Field
@@ -142,8 +143,15 @@ def create_app(
     *,
     rag_graph: Any | None = None,
     hitl_graph: Any | None = None,
+    auth_token: str | None = None,
 ) -> FastAPI:
     """创建 FastAPI 应用；测试时可以注入图，避免真实模型/数据库。"""
+
+    configured_token = (
+        auth_token
+        if auth_token is not None
+        else get_settings().web_auth_token
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -169,9 +177,35 @@ def create_app(
 
     app = FastAPI(
         title="Personal Knowledge Agent",
-        version="0.8.0",
+        version="0.9.0",
         lifespan=lifespan,
     )
+
+    @app.middleware("http")
+    async def auth_and_log(request: Request, call_next):
+        path = request.url.path
+        if configured_token and path.startswith("/api/") and path != "/api/health":
+            supplied = request.headers.get("x-api-key", "")
+            if not supplied:
+                authorization = request.headers.get("authorization", "")
+                if authorization.lower().startswith("bearer "):
+                    supplied = authorization[7:].strip()
+            if supplied != configured_token:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Unauthorized: invalid API token"},
+                )
+
+        started = time.perf_counter()
+        response = await call_next(request)
+        logger.info(
+            "web.request method=%s path=%s status=%d elapsed=%.3fs",
+            request.method,
+            path,
+            response.status_code,
+            time.perf_counter() - started,
+        )
+        return response
 
     @app.get("/", include_in_schema=False)
     def index():
@@ -184,6 +218,7 @@ def create_app(
             "status": "ok",
             "model": settings.model_name,
             "modes": ["rag", "hitl"],
+            "auth_required": bool(configured_token),
         }
 
     @app.post("/api/threads")
@@ -374,10 +409,11 @@ app = create_app()
 def run() -> None:
     import uvicorn
 
+    settings = get_settings()
     uvicorn.run(
         "app.web.server:app",
-        host="127.0.0.1",
-        port=8000,
+        host=settings.web_host,
+        port=settings.web_port,
         reload=False,
     )
 

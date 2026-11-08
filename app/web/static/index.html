@@ -133,13 +133,18 @@
     <aside class="sidebar">
       <div>
         <div class="brand">Personal Knowledge Agent</div>
-        <div class="sub">Day 8 Runtime · RAG + HITL</div>
+        <div class="sub">Agentic RAG · HITL · MCP · MultiAgent</div>
       </div>
       <div class="health"><span class="dot" id="healthDot"></span><span id="healthText">检查服务...</span></div>
 
       <div>
         <label for="userId">User ID</label>
         <input id="userId" value="web-user" autocomplete="off">
+      </div>
+
+      <div>
+        <label for="apiToken">API Token（可选）</label>
+        <input id="apiToken" type="password" placeholder="未启用认证可留空" autocomplete="off">
       </div>
 
       <div>
@@ -203,6 +208,14 @@
   const modeEl = $("mode");
   const userIdEl = $("userId");
   const threadIdEl = $("threadId");
+  const apiTokenEl = $("apiToken");
+
+  function apiFetch(url, options = {}) {
+    const headers = new Headers(options.headers || {});
+    const token = apiTokenEl.value.trim();
+    if (token) headers.set("X-API-Key", token);
+    return fetch(url, { ...options, headers });
+  }
 
   let currentApproval = null;
   let assistantEl = null;
@@ -265,7 +278,7 @@
 
   async function health() {
     try {
-      const res = await fetch("/api/health");
+      const res = await apiFetch("/api/health");
       const data = await res.json();
       $("healthDot").classList.add("ok");
       $("healthText").textContent = `服务正常 · ${data.model} · ${data.modes.join(" / ")}`;
@@ -276,7 +289,7 @@
 
   async function newThread() {
     try {
-      const res = await fetch("/api/threads", { method: "POST" });
+      const res = await apiFetch("/api/threads", { method: "POST" });
       const data = await res.json();
       threadIdEl.value = data.thread_id;
       clearMessages();
@@ -291,7 +304,7 @@
     const mode = modeEl.value;
     try {
       const url = `/api/threads/${encodeURIComponent(threadId())}?mode=${mode}&user_id=${encodeURIComponent(userId())}`;
-      const res = await fetch(url);
+      const res = await apiFetch(url);
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       clearMessages();
@@ -328,7 +341,7 @@
     $("approveBtn").disabled = true;
     $("rejectBtn").disabled = true;
     try {
-      const res = await fetch("/api/hitl/resume", {
+      const res = await apiFetch("/api/hitl/resume", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -371,7 +384,7 @@
     messagesEl.appendChild(assistantEl);
     messagesEl.scrollTop = messagesEl.scrollHeight;
 
-    const res = await fetch("/api/chat/stream", {
+    const res = await apiFetch("/api/chat/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -417,7 +430,7 @@
 
   async function sendHitl(text) {
     addMessage("user", text);
-    const res = await fetch("/api/hitl/start", {
+    const res = await apiFetch("/api/hitl/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -477,6 +490,11 @@
     $("modeHint").textContent = modeEl.value === "hitl"
       ? "HITL 模式会生成报告、暂停审批，通过后保存到 data/reports/。"
       : "RAG 模式会流式返回回答，并展示检索、评分、改写等步骤。";
+  });
+
+  apiTokenEl.value = localStorage.getItem("pka_api_token") || "";
+  apiTokenEl.addEventListener("input", () => {
+    localStorage.setItem("pka_api_token", apiTokenEl.value.trim());
   });
 
   threadId();

@@ -48,6 +48,9 @@ class Settings:
     memory_db: str
     default_user: str
     reports_dir: str
+    web_host: str
+    web_port: int
+    web_auth_token: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -82,6 +85,9 @@ class Settings:
             memory_db=os.getenv("MEMORY_DB", "data/memory.sqlite"),
             default_user=os.getenv("DEFAULT_USER", "local-user"),
             reports_dir=os.getenv("REPORTS_DIR", "data/reports"),
+            web_host=os.getenv("WEB_HOST", "127.0.0.1"),
+            web_port=int(os.getenv("WEB_PORT", "8000")),
+            web_auth_token=os.getenv("WEB_AUTH_TOKEN", ""),
         )
 
 

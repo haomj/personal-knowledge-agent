@@ -1,6 +1,6 @@
 # Personal Knowledge Research Agent
 
-按 10 天计划逐步实现一个可部署的个人知识研究助手。当前进度：**Day 8 — v0.8-web-runtime**。
+按 10 天计划逐步实现一个可部署的个人知识研究助手。当前进度：**Day 9 — v0.9-deployed**。
 
 ## 当前能力
 
@@ -84,6 +84,24 @@ Browser
   -> SQLite checkpoint + Store
 ```
 
+### Day 9：Docker 部署与生产工程
+
+- 非 root Docker 镜像，基于 Python 3.12 + uv
+- Docker Compose 单实例部署
+- 命名 volume `pka-data` 持久化 checkpoint、Store、Chroma 和报告
+- 容器健康检查 `/api/health`
+- 可选 `WEB_AUTH_TOKEN` API Token 认证
+- 请求日志：method、path、status、耗时
+- `restart: unless-stopped`、`init: true`、优雅停止
+- `.dockerignore` 排除 `.env`、`.venv`、数据索引和报告
+
+```text
+docker compose
+  └── agent (FastAPI + RAG + HITL + MCP stdio)
+        ├── pka-data volume: checkpoints/store/chroma/reports
+        └── ./data/docs:ro: 知识库文档
+```
+
 ## 环境准备
 
 需要 Python 3.12 和 [uv](https://docs.astral.sh/uv/)。
@@ -117,6 +135,11 @@ CHECKPOINT_DB=data/checkpoints.sqlite
 MEMORY_DB=data/memory.sqlite
 DEFAULT_USER=local-user
 REPORTS_DIR=data/reports
+
+WEB_HOST=127.0.0.1
+WEB_PORT=8000
+# 本地可留空；公网/演示环境请设置强随机 Token。
+WEB_AUTH_TOKEN=
 ```
 
 > `.env`、`data/chroma/`、`data/*.sqlite*`、`data/reports/` 都已被 `.gitignore` 忽略。
@@ -215,6 +238,56 @@ http://127.0.0.1:8000
 - HITL 报告审批，审批通过后保存到 `data/reports/`；
 - User ID 和 Thread ID；不同用户同一 thread 不会串线。
 
+### Docker 部署
+
+先准备 `.env`：
+
+```bash
+cp .env.example .env
+```
+
+首次构建镜像并建立知识库索引：
+
+```bash
+docker compose build
+```
+
+```bash
+docker compose run --rm agent python -m app.rag.ingest
+```
+
+启动服务：
+
+```bash
+docker compose up -d
+```
+
+浏览器访问：
+
+```text
+http://127.0.0.1:8000
+```
+
+查看日志：
+
+```bash
+docker compose logs -f agent
+```
+
+重启验证持久化：
+
+```bash
+docker compose restart
+```
+
+> 数据保存在命名 volume `pka-data` 中；`docker compose down` 不会删除它，`docker compose down -v` 会删除数据。
+> 如果设置了 `WEB_AUTH_TOKEN`，在页面左侧填入相同的 API Token 才能调用 `/api/*`。
+> 如果宿主机使用本地代理（例如 `127.0.0.1:7897`），在 `.env` 中设置
+> `DOCKER_HTTP_PROXY=http://host.docker.internal:7897`，让容器内也能访问模型/Embedding API。
+> 注意：`docker compose config` 会把 `.env` 中的密钥展开成明文，不要把完整输出贴到聊天、Issue 或公开文档。
+> 如果 BuildKit 报 `lookup host.docker.internal: no such host`，说明 Docker 构建器无法解析宿主机别名；可改用宿主机局域网 IP（见 docs/day09-deployment.md）。
+> 如果 `127.0.0.1:8000` 一直加载但 `localhost:8000` 正常，运行 `lsof -nP -iTCP:8000 -sTCP:LISTEN`；可能有旧的本地 uvicorn/uv 进程占用了 IPv4 8000。停止旧进程后执行 `docker compose down && docker compose up -d`。
+
 MultiAgent 模式：
 
 ```bash
@@ -311,6 +384,12 @@ Web API 测试：
 uv run pytest tests/test_web.py -q
 ```
 
+部署配置测试：
+
+```bash
+uv run pytest tests/test_deployment.py -q
+```
+
 真实 MultiAgent 测试：
 
 ```bash
@@ -332,6 +411,9 @@ RUN_LIVE_TESTS=1 uv run pytest tests/test_rag_live.py -q
 ## 目录
 
 ```text
+Dockerfile
+compose.yaml
+.dockerignore
 app/
 ├── config.py            # 环境变量、模型/Embedding 工厂、日志
 ├── state.py             # AgentState
@@ -376,6 +458,7 @@ tests/
 ├── test_hitl.py
 ├── test_middleware.py
 ├── test_web.py
+├── test_deployment.py
 ├── test_smoke_live.py
 ├── test_rag_live.py
 ├── test_mcp_live.py
@@ -389,7 +472,8 @@ docs/
 ├── day05-multiagent.md
 ├── day06-hitl.md
 ├── day07-middleware.md
-└── day08-web-runtime.md
+├── day08-web-runtime.md
+└── day09-deployment.md
 ```
 
 ## 开发进度
@@ -402,5 +486,5 @@ docs/
 - [x] Day 6：HITL
 - [x] Day 7：Middleware
 - [x] Day 8：Runtime API 与 Web UI
-- [ ] Day 9：Docker 部署
+- [x] Day 9：Docker 部署
 - [ ] Day 10：端到端测试与交付

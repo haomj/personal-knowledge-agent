@@ -1,0 +1,44 @@
+services:
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        HTTP_PROXY: ${DOCKER_HTTP_PROXY:-}
+        HTTPS_PROXY: ${DOCKER_HTTP_PROXY:-}
+        NO_PROXY: ${DOCKER_NO_PROXY:-localhost,127.0.0.1}
+    image: personal-knowledge-agent:0.9.0
+    env_file:
+      - .env
+    environment:
+      WEB_HOST: 0.0.0.0
+      WEB_PORT: "8000"
+      DOCS_DIR: /app/data/docs
+      CHROMA_DIR: /app/data/chroma
+      CHECKPOINT_DB: /app/data/checkpoints.sqlite
+      MEMORY_DB: /app/data/memory.sqlite
+      REPORTS_DIR: /app/data/reports
+      HTTP_PROXY: ${DOCKER_HTTP_PROXY:-}
+      HTTPS_PROXY: ${DOCKER_HTTP_PROXY:-}
+      NO_PROXY: ${DOCKER_NO_PROXY:-localhost,127.0.0.1}
+    ports:
+      - "8000:8000"
+    volumes:
+      - pka-data:/app/data
+      - ./data/docs:/app/data/docs:ro
+    init: true
+    restart: unless-stopped
+    stop_grace_period: 15s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  pka-data:
