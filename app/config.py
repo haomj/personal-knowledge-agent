@@ -40,8 +40,14 @@ class Settings:
     embedding_base_url: str
     embedding_api_key: str
     docs_dir: str
+    vector_store: str
     chroma_dir: str
     chroma_collection: str
+    milvus_uri: str
+    milvus_collection: str
+    milvus_token: str
+    milvus_index_type: str
+    milvus_metric_type: str
     rag_top_k: int
     rag_max_retries: int
     checkpoint_db: str
@@ -75,8 +81,17 @@ class Settings:
                 "EMBEDDING_API_KEY", os.getenv("DASHSCOPE_API_KEY", "")
             ),
             docs_dir=os.getenv("DOCS_DIR", "data/docs"),
+            vector_store=os.getenv("VECTOR_STORE", "chroma").lower(),
             chroma_dir=os.getenv("CHROMA_DIR", "data/chroma"),
             chroma_collection=os.getenv("CHROMA_COLLECTION", "knowledge_base"),
+            milvus_uri=os.getenv(
+                "MILVUS_STORE_URI",
+                os.getenv("MILVUS_URI", "data/milvus.db"),
+            ),
+            milvus_collection=os.getenv("MILVUS_COLLECTION", "knowledge_base"),
+            milvus_token=os.getenv("MILVUS_TOKEN", ""),
+            milvus_index_type=os.getenv("MILVUS_INDEX_TYPE", "AUTOINDEX"),
+            milvus_metric_type=os.getenv("MILVUS_METRIC_TYPE", "COSINE"),
             rag_top_k=int(os.getenv("RAG_TOP_K", "4")),
             rag_max_retries=int(os.getenv("RAG_MAX_RETRIES", "1")),
             checkpoint_db=os.getenv(

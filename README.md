@@ -5,9 +5,9 @@
 [![CI](https://github.com/haomj/personal-knowledge-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/haomj/personal-knowledge-agent/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> 当前版本：**v1.0.0** · Day 10 交付 · 46 个离线测试 + 6 个真实 API 测试
+> 当前版本：**v1.1.0** · Day 10 交付 + Milvus 扩展 · 50 个离线测试 + 6 个真实 API 测试
 
-> 技术栈：LangGraph · LangChain 1.x · DeepSeek · DashScope Embedding · Chroma · MCP · FastAPI · SQLite · Docker
+> 技术栈：LangGraph · LangChain 1.x · DeepSeek · DashScope Embedding · Chroma / Milvus · MCP · FastAPI · SQLite · Docker
 
 ## 项目亮点
 
@@ -40,7 +40,7 @@ flowchart TD
     W --> M[MultiAgent Supervisor]
 
     R --> CR[Knowledge Retriever]
-    CR --> C[(Chroma)]
+    CR --> C[(Chroma / Milvus)]
     R --> L[DeepSeek]
 
     M --> KA[Knowledge Agent]
@@ -64,6 +64,7 @@ flowchart TD
 | --- | --- | --- |
 | 基础 Agent | ✅ | LangGraph `START -> agent -> END`，流式输出 |
 | Agentic RAG | ✅ | 10 篇文档、22 chunks、检索评分、查询改写、来源 |
+| 向量库后端 | ✅ | Chroma（默认）与 Milvus（Lite/远程）可切换 |
 | Memory | ✅ | SQLite checkpoint + Store 用户偏好 |
 | MCP | ✅ | stdio Server/Client，两个知识库工具 |
 | MultiAgent | ✅ | Supervisor + Knowledge/Research Agent |
@@ -120,6 +121,52 @@ uv run personal-knowledge-web
 http://127.0.0.1:8000
 ```
 
+## 切换向量库：Chroma / Milvus
+
+默认使用 Chroma，无需额外配置：
+
+```dotenv
+VECTOR_STORE=chroma
+CHROMA_DIR=data/chroma
+CHROMA_COLLECTION=knowledge_base
+```
+
+切换到 Milvus：
+
+```dotenv
+VECTOR_STORE=milvus
+# Milvus Lite 本地文件
+MILVUS_STORE_URI=data/milvus.db
+# 或远程 Milvus Server
+# MILVUS_STORE_URI=http://localhost:19530
+MILVUS_COLLECTION=knowledge_base
+MILVUS_TOKEN=
+MILVUS_INDEX_TYPE=AUTOINDEX
+MILVUS_METRIC_TYPE=COSINE
+```
+
+重建对应后端的索引：
+
+```bash
+# Chroma
+uv run python -m app.rag.ingest --backend chroma
+```
+
+```bash
+# Milvus Lite
+uv run python -m app.rag.ingest --backend milvus --milvus-uri data/milvus.db
+```
+
+使用 Milvus 运行 Agent：
+
+```bash
+VECTOR_STORE=milvus uv run python -m app.cli --question "Agentic RAG 最多重试几次？"
+```
+
+> Chroma 与 Milvus 的索引相互独立；切换后端后需要重新 ingest。  
+> `MILVUS_STORE_URI` 是应用专用变量；不要用本地文件路径覆盖 `MILVUS_URI`，因为 pymilvus 会在 import 时读取它。  
+> 详见 [docs/vector-store-backends.md](docs/vector-store-backends.md)。
+
 ## 运行模式
 
 ```bash
@@ -163,6 +210,25 @@ docker compose run --rm agent python -m app.rag.ingest
 ```
 
 启动：
+
+```bash
+docker compose up -d
+```
+
+默认使用 Chroma。若要切换 Milvus，在 `.env` 设置：
+
+```dotenv
+VECTOR_STORE=milvus
+MILVUS_STORE_URI=/app/data/milvus.db
+MILVUS_COLLECTION=knowledge_base
+MILVUS_METRIC_TYPE=COSINE
+```
+
+然后重建索引并重启：
+
+```bash
+docker compose run --rm agent python -m app.rag.ingest --backend milvus
+```
 
 ```bash
 docker compose up -d
@@ -212,7 +278,7 @@ uv run pytest -q
 当前结果：
 
 ```text
-46 passed, 6 skipped
+50 passed, 6 skipped
 ```
 
 真实 API 测试：
@@ -248,7 +314,7 @@ app/
 ├── state.py         # AgentState
 ├── graph.py         # 基础 Agent 图
 ├── cli.py           # rag/basic/mcp/multi/hitl/middleware
-├── rag/             # 加载、切分、Embedding、Chroma、RAG 图
+├── rag/             # 加载、切分、Embedding、Chroma/Milvus、RAG 图
 ├── mcp/             # MCP Server / Client / Agent
 ├── multiagent/      # Supervisor + 子 Agent
 ├── hitl/            # interrupt 审批图与报告保存
@@ -258,14 +324,15 @@ app/
 
 data/
 ├── docs/            # 10 篇技术文档（提交）
-├── chroma/          # 生成的索引（不提交）
+├── chroma/          # Chroma 索引（不提交）
+├── milvus.db        # Milvus Lite 索引（不提交）
 ├── checkpoints.sqlite
 ├── memory.sqlite
 └── reports/         # 审批生成的报告（不提交）
 
 docs/                # 每日源码/实验笔记 + 架构/API/部署
 docs/assets/         # Web UI 演示截图
-tests/               # 46 个离线测试 + 6 个真实 API 测试
+tests/               # 50 个离线测试 + 6 个真实 API 测试
 scripts/verify.sh    # 一键验收
 Dockerfile
 compose.yaml
@@ -284,6 +351,7 @@ compose.yaml
 - [Day 8：Runtime API 与 Web UI](docs/day08-web-runtime.md)
 - [Day 9：Docker 部署](docs/day09-deployment.md)
 - [Day 10：端到端验收](docs/day10-e2e.md)
+- [向量库后端：Chroma / Milvus](docs/vector-store-backends.md)
 - [架构设计](docs/architecture.md)
 - [API 说明](docs/api.md)
 

@@ -1,29 +1,42 @@
-"""知识库检索器：封装 Chroma 的相似度检索。"""
+"""知识库检索器：支持 Chroma 与 Milvus 后端。"""
 
 from __future__ import annotations
 
 import logging
 from typing import Any
 
-from langchain_chroma import Chroma
 from langchain_core.documents import Document
+from langchain_core.vectorstores import VectorStore
 
 from app.config import get_embeddings, get_settings
-from app.rag.vector_store import get_vector_store
+from app.rag.vector_store import (
+    collection_count,
+    get_configured_vector_store,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class KnowledgeRetriever:
-    """把 Chroma 检索结果整理成带 score 的 Document 列表。"""
+    """把向量库检索结果整理成带 score 的 Document 列表。"""
 
-    def __init__(self, store: Chroma, *, k: int = 4):
+    def __init__(self, store: VectorStore, *, k: int = 4):
         self.store = store
         self.k = k
 
     def retrieve(self, query: str) -> list[Document]:
         if not query.strip():
             return []
+
+        # Milvus 在空集合/尚未建索引时查询会报 "No index params"；
+        # 先做数量检查，空索引用空结果表示，交给 RAG 评分节点处理。
+        try:
+            if collection_count(self.store) == 0:
+                logger.info("rag.retrieve.empty_index backend=%s", type(self.store).__name__)
+                return []
+        except Exception as exc:
+            logger.warning("rag.retrieve.count_failed: %s", exc)
+
         pairs = self.store.similarity_search_with_relevance_scores(
             query, k=self.k
         )
@@ -51,13 +64,9 @@ class KnowledgeRetriever:
 
 
 def build_default_retriever(*, top_k: int | None = None) -> KnowledgeRetriever:
-    """按 .env 配置构建默认检索器。"""
+    """按 .env 配置构建默认检索器（Chroma 或 Milvus）。"""
     settings = get_settings()
-    store = get_vector_store(
-        persist_directory=settings.chroma_dir,
-        collection_name=settings.chroma_collection,
-        embeddings=get_embeddings(),
-    )
+    store = get_configured_vector_store(embeddings=get_embeddings())
     return KnowledgeRetriever(store, k=top_k or settings.rag_top_k)
 
 

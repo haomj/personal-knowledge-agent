@@ -28,7 +28,7 @@ flowchart LR
     API --> HITL[HITL 审批]
     API --> Multi[MultiAgent Supervisor]
 
-    RAG --> Chroma[(Chroma)]
+    RAG --> Chroma[(Chroma / Milvus)]
     RAG --> DeepSeek[DeepSeek API]
     RAG --> Dash[DashScope Embedding]
 
@@ -50,6 +50,7 @@ flowchart LR
 | FastAPI | `app/web/server.py` | HTTP/SSE、线程状态、HITL API、认证、日志 |
 | 基础图 | `app/graph.py` | `START -> agent -> END` |
 | RAG 图 | `app/rag/graph.py` | retrieve -> grade -> generate / rewrite |
+| 向量库层 | `app/rag/vector_store.py` | Chroma / Milvus 后端工厂 |
 | HITL 图 | `app/hitl/graph.py` | draft -> interrupt -> save/cancel |
 | MCP Server | `app/mcp/server.py` | `list_documents` / `search_documents` |
 | MCP Client | `app/mcp/client.py` | 工具发现、调用、LangChain 工具加载 |
@@ -70,7 +71,7 @@ sequenceDiagram
     participant G as grade
     participant W as rewrite
     participant A as generate
-    participant C as Chroma
+    participant C as Vector Store
     participant L as DeepSeek
 
     U->>API: 问题
@@ -105,7 +106,7 @@ sequenceDiagram
     participant C as MCP Client
     participant S as MCP Server
     participant R as Retriever
-    participant C2 as Chroma
+    participant C2 as Vector Store
 
     A->>C: tool_calls
     C->>S: JSON-RPC (stdio)
@@ -127,7 +128,7 @@ sequenceDiagram
     participant S as Supervisor
     participant K as Knowledge Agent
     participant R as Research Agent
-    participant M as MCP/Chroma
+    participant M as MCP/Vector Store
     participant T as Tavily
 
     U->>S: 问题
@@ -207,6 +208,7 @@ flowchart TD
 | 决策 | 原因 | 代价 |
 | --- | --- | --- |
 | SQLite 持久化 | 单实例、零运维、易演示 | 不适合多实例/高并发 |
+| Chroma 默认、Milvus 可选 | 保留本地轻量默认，兼顾 Milvus 生态 | 切换后端需要重建索引 |
 | DeepSeek 生成 + DashScope Embedding | DeepSeek 无 Embedding API；DashScope 兼容 OpenAI | 两套 Key/供应商 |
 | Chroma | 本地部署简单 | 大规模检索需专用向量库 |
 | Tool-based Handoff | 比嵌套 Graph 易实现、易调试 | 复杂任务规划能力有限 |
@@ -216,7 +218,7 @@ flowchart TD
 
 ## 8. 安全边界
 
-- `.env`、SQLite、Chroma、reports 不提交；
+- `.env`、SQLite、Chroma/Milvus 索引、reports 不提交；
 - Web 默认仅监听 `127.0.0.1`；
 - Docker 非 root 运行；
 - 高风险工具仅 admin（Middleware 演示）；

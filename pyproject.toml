@@ -1,6 +1,6 @@
 [project]
 name = "personal-knowledge-agent"
-version = "1.0.0"
+version = "1.1.0"
 description = "A personal knowledge research agent built with LangGraph, Agentic RAG, MCP, MultiAgent and HITL"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -11,6 +11,7 @@ dependencies = [
     "langchain>=1.4.5",
     "langchain-chroma>=1.1.0",
     "langchain-mcp-adapters>=0.3.2",
+    "langchain-milvus>=0.4.0",
     "langchain-openai>=1.7.1",
     "langchain-tavily>=0.2.18",
     "langchain-text-splitters>=1.1.3",

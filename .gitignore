@@ -23,6 +23,8 @@ examples/
 
 # Generated vector index
 data/chroma/
+data/milvus.db
+data/milvus.db-*
 
 # Local SQLite databases (checkpoints, long-term memory)
 data/*.sqlite*

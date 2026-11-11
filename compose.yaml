@@ -14,7 +14,14 @@ services:
       WEB_HOST: 0.0.0.0
       WEB_PORT: "8000"
       DOCS_DIR: /app/data/docs
+      VECTOR_STORE: ${VECTOR_STORE:-chroma}
       CHROMA_DIR: /app/data/chroma
+      CHROMA_COLLECTION: ${CHROMA_COLLECTION:-knowledge_base}
+      MILVUS_STORE_URI: ${MILVUS_STORE_URI:-/app/data/milvus.db}
+      MILVUS_COLLECTION: ${MILVUS_COLLECTION:-knowledge_base}
+      MILVUS_TOKEN: ${MILVUS_TOKEN:-}
+      MILVUS_INDEX_TYPE: ${MILVUS_INDEX_TYPE:-AUTOINDEX}
+      MILVUS_METRIC_TYPE: ${MILVUS_METRIC_TYPE:-COSINE}
       CHECKPOINT_DB: /app/data/checkpoints.sqlite
       MEMORY_DB: /app/data/memory.sqlite
       REPORTS_DIR: /app/data/reports

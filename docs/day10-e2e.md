@@ -3,6 +3,8 @@
 > 交付版本：`v1.0.0-personal-knowledge-agent`  
 > 最终定位：单用户、单实例、可演示、可继续扩展的个人知识研究 Agent  
 > 验收结论：核心功能、离线测试、真实 API 测试和 Docker 部署均已完成
+>
+> 后续扩展：已新增 Milvus 向量库后端（v1.1.0），当前测试总数为 **50 passed / 6 skipped**；详见 [docs/vector-store-backends.md](vector-store-backends.md)。
 
 ## 1. 今日目标
 

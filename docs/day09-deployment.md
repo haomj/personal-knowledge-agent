@@ -142,7 +142,7 @@ services:
 
 - `checkpoints.sqlite`：短期记忆
 - `memory.sqlite`：长期偏好
-- `chroma/`：向量索引
+- `chroma/` 或 `milvus.db`：向量索引（由 `VECTOR_STORE` 决定）
 - `reports/`：审批后生成的报告
 
 `docker compose down` 不会删除 volume；`docker compose down -v` 会删除。
